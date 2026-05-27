@@ -1,0 +1,29 @@
+{
+	"name": "typed-result-monorepo",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"packages/*",
+		"playground/*"
+	],
+	"scripts": {
+		"build": "npm run build -w @codeva-dev/typed-result",
+		"test": "npm run test -w @codeva-dev/typed-result",
+		"typecheck": "npm run typecheck -w @codeva-dev/typed-result",
+		"pack:dry": "npm pack --dry-run -w @codeva-dev/typed-result",
+		"typed-result:build": "npm run build -w @codeva-dev/typed-result",
+		"typed-result:test": "npm run test -w @codeva-dev/typed-result",
+		"typed-result:typecheck": "npm run typecheck -w @codeva-dev/typed-result",
+		"typed-result:pack:dry": "npm pack --dry-run -w @codeva-dev/typed-result",
+		"playground:dev": "npm run dev -w todo-manager",
+		"playground:build": "npm run build -w todo-manager",
+		"release:check": "npm run typecheck && npm run test && npm run build && npm run pack:dry",
+		"version:alpha": "npm run release:check && lerna version prerelease --preid alpha",
+		"publish:alpha": "npm run release:check && lerna publish from-package --dist-tag alpha",
+		"publish:alpha:check": "npm run release:check"
+	},
+	"devDependencies": {
+		"lerna": "^8.2.4",
+		"typescript": "^5.8.3"
+	}
+}

@@ -1,0 +1,73 @@
+{
+  "name": "@codeva-dev/typed-result",
+  "version": "0.1.0-alpha.0",
+  "description": "A serializable typed Result model for boundary responses.",
+  "keywords": [
+    "result",
+    "typed-result",
+    "serializable",
+    "wire-protocol",
+    "boundary",
+    "tagged-errors",
+    "typescript",
+    "react",
+    "tanstack-query",
+    "tanstack-start"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeva-dev/typed-result.git",
+    "directory": "packages/typed-result"
+  },
+  "bugs": {
+    "url": "https://github.com/codeva-dev/typed-result/issues"
+  },
+  "homepage": "https://github.com/codeva-dev/typed-result#readme",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "^19.2.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  }
+}
