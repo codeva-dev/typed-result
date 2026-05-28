@@ -1,6 +1,6 @@
 {
   "name": "@codeva-dev/typed-result",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "A serializable typed Result model for boundary responses.",
   "keywords": [
     "result",
@@ -68,8 +68,8 @@
   },
   "peerDependencies": {
     "effect": ">=3",
-    "zod": ">=4",
-    "react": ">=18"
+    "react": ">=18",
+    "zod": ">=4"
   },
   "peerDependenciesMeta": {
     "effect": {
