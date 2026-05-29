@@ -15,15 +15,19 @@
 		"typed-result:test": "npm run test -w @codeva-dev/typed-result",
 		"typed-result:typecheck": "npm run typecheck -w @codeva-dev/typed-result",
 		"typed-result:pack:dry": "npm pack --dry-run -w @codeva-dev/typed-result",
-		"playground:dev": "npm run dev -w todo-manager",
-		"playground:build": "npm run build -w todo-manager",
+		"playground:start:dev": "npm run dev -w tanstack-start-todo",
+		"playground:start:build": "npm run build -w tanstack-start-todo",
+		"playground:hono:api": "npm run dev -w hono-api",
+		"playground:hono:client": "npm run dev -w hono-client",
+		"playground:hono:build": "npm run build -w hono-api && npm run build -w hono-client",
+		"playground:dev": "npm run playground:start:dev",
+		"playground:build": "npm run playground:start:build && npm run playground:hono:build",
 		"release:check": "npm run typecheck && npm run test && npm run build && npm run pack:dry",
-		"version:alpha": "npm run release:check && lerna version prerelease --preid alpha",
-		"publish:alpha": "npm run release:check && lerna publish from-package --dist-tag alpha",
+		"version:alpha": "npm run release:check && npm version prerelease --preid alpha -w @codeva-dev/typed-result",
+		"publish:alpha": "npm run release:check && npm publish -w @codeva-dev/typed-result --tag alpha --access public",
 		"publish:alpha:check": "npm run release:check"
 	},
 	"devDependencies": {
-		"lerna": "^8.2.4",
 		"typescript": "^5.8.3"
 	}
 }
