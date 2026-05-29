@@ -10,8 +10,14 @@ export { flatMapFailure, flatMapFailureTag, flatMapFailureTags, flatMapSuccess }
 export { mapFailure, mapFailureTag, mapFailureTags, mapSuccess } from './combinators/map';
 export { match, matchFailureTag, matchFailureTags, type MatchHandlers } from './combinators/match';
 export { tap, tapFailure, tapSuccess } from './combinators/tap';
-export { ResultUnwrapError, unwrap, unwrapOr, unwrapOrElse, unwrapOrNull, unwrapOrUndefined } from './combinators/unwrap';
-export { TypedResultDecodeError, TypedResultEncodeError } from './errors';
+export {
+	ResultUnwrapError,
+	unwrap,
+	unwrapOr,
+	unwrapOrElse,
+	unwrapOrNull,
+	unwrapOrUndefined,
+} from './combinators/unwrap';
 export { handle, type Handle } from './handle/index';
 export { Failure, Success, createTaggedFailure, defineTaggedFailure, isFailure, isResult, isSuccess } from './result';
 

@@ -44,18 +44,6 @@ React helpers:
 import { Match, MatchFailureTags, useResult } from "@codeva-dev/typed-result/react"
 ```
 
-Zod v4 adapter:
-
-```ts
-import { Result, z } from "@codeva-dev/typed-result/zod"
-```
-
-Effect Schema adapter:
-
-```ts
-import { Result, Schema } from "@codeva-dev/typed-result/effect"
-```
-
 ## Quick Example
 
 ```ts
@@ -212,8 +200,9 @@ if (Result.isFailure(result)) {
 }
 ```
 
-`isResult` is not a schema decoder. Use the Zod or Effect Schema adapter when a
-boundary payload needs runtime validation.
+`isResult` is not a runtime validator for your domain payloads. It only checks
+the Result envelope shape and failure tag consistency. Validate unknown payloads
+with your schema library at the boundary when needed.
 
 ## Transforming
 
@@ -568,308 +557,60 @@ import { Match, MatchFailureTags } from "@codeva-dev/typed-result/react"
 />
 ```
 
-## Schema Adapters
+## Boundary Styles
 
-Schema adapters are exported from separate subpaths. Each adapter re-exports the
-core API and adds schema-aware helpers.
+There are two common ways to use this package at a boundary.
 
-```ts
-import { Result, z } from "@codeva-dev/typed-result/zod"
-import { Result, Schema } from "@codeva-dev/typed-result/effect"
-```
+### Result-Envelope Boundary
 
-The adapter namespace still includes the core API:
+Use this when you control the protocol and want the boundary message itself to
+be a `Result`.
 
-```ts
-Result.Success(...)
-Result.Failure(...)
-Result.match(...)
-Result.handle(...)
-```
+This is a good fit for TanStack Start server functions, RPC-like calls, worker
+messages, SSR payloads, queues, caches, localStorage, and other channels where
+HTTP semantics are not the main application protocol.
 
-It also adds:
+In this style, expected application states travel as `Result.Failure(...)`.
+Unexpected non-actionable defects should still throw and use the runtime or
+framework error path.
 
-```ts
-Result.defineSuccess(...)
-Result.defineFailure(...)
-Result.defineSchema(...)
-```
-
-### Zod
+Create the Result envelope with the core constructors before it crosses the
+boundary:
 
 ```ts
-import { Result, z } from "@codeva-dev/typed-result/zod"
-
-const Todo = Result.defineSuccess(
-  z.object({
-    id: z.string(),
-    title: z.string(),
-    completed: z.boolean(),
-  }),
-)
-
-const TodoNotFound = Result.defineFailure("TodoNotFound", {
-  todoId: z.string(),
-  message: z.string(),
-})
-
-const TodoLoadFailed = Result.defineFailure("TodoLoadFailed", {
-  message: z.string(),
-})
-
-const TodoResult = Result.defineSchema({
-  success: Todo,
-  failure: [TodoNotFound, TodoLoadFailed],
-})
+return Result.Success(todo)
 ```
 
-The individual descriptors can create typed values:
+This style is usually the right choice when the call itself is the protocol:
+`getTodo`, `completeTodo`, `sendInvite`, `reserveBook`, and similar
+operation-oriented boundaries.
 
-```ts
-const success = Todo.Success({
-  id: "todo-1",
-  title: "Ship it",
-  completed: false,
-})
+### HTTP-Native Boundary
 
-const failure = TodoNotFound.Failure({
-  todoId: "todo-1",
-  message: "Todo does not exist",
-})
-```
+Use this for public or conventional REST APIs.
 
-The combined schema can decode and encode boundary payloads:
+In this style, the server uses normal HTTP semantics:
 
-```ts
-const decoded = TodoResult.decode(payload)
-const encoded = TodoResult.encode(decoded)
-```
+- `200` returns a plain success payload
+- `400`, `404`, `409`, or `422` can return expected actionable error payloads
+- `500` and other unexpected defects should use the framework error path
 
-By default, invalid payloads throw `TypedResultDecodeError`.
+The frontend client adapter turns the HTTP response into a `Result` for UI and
+TanStack Query usage.
 
-```ts
-import { TypedResultDecodeError } from "@codeva-dev/typed-result"
+This style is usually the right choice when HTTP is intentionally part of the
+contract. For example, a `GET /todos/:todoId` endpoint can return `404` as an
+HTTP response, and the frontend can decide that this particular `404` is an
+actionable `TodoNotFound` failure. A `500`, invalid JSON response, or failed
+network request can still throw and remain in the TanStack Query error channel.
 
-try {
-  TodoResult.decode(payload)
-} catch (error) {
-  if (error instanceof TypedResultDecodeError) {
-    console.error(error.cause)
-  }
-}
-```
+You can also return Result envelopes from HTTP endpoints if that is your chosen
+protocol. The important part is to keep the two decisions explicit:
 
-If invalid payloads are actionable in the current boundary, map them explicitly
-to a domain failure:
-
-```ts
-const decoded = TodoResult.decode(payload, {
-  onInvalid: "failure",
-  failure: () =>
-    TodoLoadFailed.Failure({
-      message: "Todo API returned an invalid payload",
-    }),
-})
-```
-
-### Effect Schema
-
-```ts
-import { Result, Schema } from "@codeva-dev/typed-result/effect"
-
-const Todo = Result.defineSuccess(
-  Schema.Struct({
-    id: Schema.String,
-    title: Schema.String,
-    completed: Schema.Boolean,
-  }),
-)
-
-const TodoNotFound = Result.defineFailure("TodoNotFound", {
-  todoId: Schema.String,
-  message: Schema.String,
-})
-
-const TodoLoadFailed = Result.defineFailure("TodoLoadFailed", {
-  message: Schema.String,
-})
-
-const TodoResult = Result.defineSchema({
-  success: Todo,
-  failure: [TodoNotFound, TodoLoadFailed],
-})
-```
-
-Usage is intentionally the same shape as the Zod adapter:
-
-```ts
-const result = TodoResult.decode(payload)
-
-return Result.match(result, {
-  onSuccess: (todo) => todo.title,
-  onFailure: (failure) => failure.message,
-})
-```
-
-### TanStack Start With Zod
-
-TanStack Start server functions are a natural boundary for this package. The
-server function returns a plain serialized `Result`, while loaders and
-components can switch on the typed failure channel.
-
-```ts
-// src/server-functions/todos.ts
-import { createServerFn } from "@tanstack/react-start"
-import { Result, z } from "@codeva-dev/typed-result/zod"
-
-const TodoInput = z.object({
-  todoId: z.string(),
-})
-
-const Todo = Result.defineSuccess(
-  z.object({
-    id: z.string(),
-    title: z.string(),
-    completed: z.boolean(),
-  }),
-)
-
-const TodoNotFound = Result.defineFailure("TodoNotFound", {
-  todoId: z.string(),
-  message: z.string(),
-})
-
-const TodoLoadFailed = Result.defineFailure("TodoLoadFailed", {
-  message: z.string(),
-})
-
-export const TodoResult = Result.defineSchema({
-  success: Todo,
-  failure: [TodoNotFound, TodoLoadFailed],
-})
-
-const todos = new Map([
-  ["todo-1", { id: "todo-1", title: "Use typed-result", completed: false }],
-])
-
-export const getTodo = createServerFn({ method: "GET" })
-  .inputValidator((input) => TodoInput.parse(input))
-  .handler(async ({ data }) => {
-    const todo = todos.get(data.todoId)
-
-    if (!todo) {
-      return TodoNotFound.Failure({
-        todoId: data.todoId,
-        message: "Todo does not exist",
-      })
-    }
-
-    return Todo.Success(todo)
-  })
-```
-
-```tsx
-// src/routes/todos.$todoId.tsx
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
-import { Match, MatchFailureTags } from "@codeva-dev/typed-result/react"
-import { getTodo, TodoResult } from "~/server-functions/todos"
-
-const todoQuery = (todoId: string) =>
-  queryOptions({
-    queryKey: ["todo", todoId],
-    queryFn: async () => {
-      const payload = await getTodo({ data: { todoId } })
-      return TodoResult.decode(payload)
-    },
-  })
-
-export const Route = createFileRoute("/todos/$todoId")({
-  loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(todoQuery(params.todoId)),
-  component: TodoRoute,
-})
-
-function TodoRoute() {
-  const { todoId } = Route.useParams()
-  const { data } = useSuspenseQuery(todoQuery(todoId))
-
-  return (
-    <Match
-      result={data}
-      onSuccess={(todo) => <h1>{todo.title}</h1>}
-      onFailure={(failure) => (
-        <MatchFailureTags
-          failure={failure}
-          tags={{
-            TodoNotFound: (failure) => <p>{failure.message}</p>,
-            TodoLoadFailed: (failure) => <p>{failure.message}</p>,
-            default: (failure) => <p>{failure._tag}</p>,
-          }}
-        />
-      )}
-    />
-  )
-}
-```
-
-### TanStack Start With Effect Schema
-
-The Effect Schema adapter follows the same boundary pattern.
-
-```ts
-// src/server-functions/todos.ts
-import { createServerFn } from "@tanstack/react-start"
-import { Result, Schema } from "@codeva-dev/typed-result/effect"
-
-const TodoInput = Schema.Struct({
-  todoId: Schema.String,
-})
-
-const Todo = Result.defineSuccess(
-  Schema.Struct({
-    id: Schema.String,
-    title: Schema.String,
-    completed: Schema.Boolean,
-  }),
-)
-
-const TodoNotFound = Result.defineFailure("TodoNotFound", {
-  todoId: Schema.String,
-  message: Schema.String,
-})
-
-export const TodoResult = Result.defineSchema({
-  success: Todo,
-  failure: TodoNotFound,
-})
-
-const decodeInput = Schema.decodeUnknownSync(TodoInput)
-
-export const getTodo = createServerFn({ method: "GET" })
-  .inputValidator((input) => decodeInput(input))
-  .handler(async ({ data }) => {
-    return TodoNotFound.Failure({
-      todoId: data.todoId,
-      message: "Todo does not exist",
-    })
-  })
-```
-
-```ts
-const payload = await getTodo({ data: { todoId } })
-const result = TodoResult.decode(payload)
-```
-
-Schema adapter notes:
-
-- `success` and `failure` can be a single schema descriptor or an array.
-- Failure schemas are always tagged.
-- Descriptor-level `Failure(fields)` and `make(fields)` are field-typed.
-- Result-schema-level `Failure(tag, fields)` validates at runtime by tag.
-- Decode and encode errors are protocol errors. They throw unless you
-  explicitly map invalid payloads into a domain failure with `onInvalid:
-  "failure"`.
+- HTTP-native APIs return plain HTTP payloads and convert to `Result` in the
+  client adapter
+- Result-envelope APIs return plain `Result` payloads and validate unknown
+  payloads separately if the receiving side needs runtime validation
 
 ## TanStack Start Examples
 
@@ -1004,43 +745,39 @@ when the route can still render a useful state.
 
 ## Hono HTTP API + React + TanStack Query
 
-This example uses Hono as a plain HTTP boundary and TanStack Query in a React
-client. The API returns a schema-encoded `Result`, and the React app decodes the
-payload before rendering.
+This example uses Hono as an HTTP-native REST boundary. The API returns plain
+HTTP responses. The React client adapter turns those responses into `Result`
+values for TanStack Query and rendering.
+
+In this style, the HTTP status code remains meaningful:
+
+- `200` becomes `Result.Success(...)`
+- expected actionable statuses such as `404` or `409` become `Result.Failure(...)`
+- unexpected transport or server failures are thrown and handled by TanStack
+  Query's error path
 
 ### Shared Schema
 
 ```ts
 // src/shared/todo-result.ts
-import { Result, z } from "@codeva-dev/typed-result/zod"
+import { z } from "zod"
 
-export const Todo = Result.defineSuccess(
-  z.object({
-    id: z.string(),
-    title: z.string(),
-    completed: z.boolean(),
-  }),
-)
-
-export const TodoList = Result.defineSuccess(z.array(Todo.schema))
-
-export const TodoLoadFailed = Result.defineFailure("TodoLoadFailed", {
-  message: z.string(),
+export const TodoSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  completed: z.boolean(),
 })
 
-export const TodoNotFound = Result.defineFailure("TodoNotFound", {
+export const TodoListSchema = z.array(TodoSchema)
+
+export const TodoNotFoundBodySchema = z.object({
   todoId: z.string(),
   message: z.string(),
 })
 
-export const TodoListResult = Result.defineSchema({
-  success: TodoList,
-  failure: TodoLoadFailed,
-})
-
-export const TodoResult = Result.defineSchema({
-  success: Todo,
-  failure: [TodoNotFound, TodoLoadFailed],
+export const TodoCouldNotBeCompletedBodySchema = z.object({
+  todoId: z.string(),
+  message: z.string(),
 })
 ```
 
@@ -1049,7 +786,6 @@ export const TodoResult = Result.defineSchema({
 ```ts
 // src/server/app.ts
 import { Hono } from "hono"
-import { TodoListResult, TodoResult } from "../shared/todo-result"
 
 const todos = new Map([
   ["todo-1", { id: "todo-1", title: "Use typed-result", completed: false }],
@@ -1058,16 +794,7 @@ const todos = new Map([
 export const app = new Hono()
 
 app.get("/api/todos", (c) => {
-  try {
-    return c.json(TodoListResult.Success([...todos.values()]))
-  } catch {
-    return c.json(
-      TodoListResult.Failure("TodoLoadFailed", {
-        message: "Could not load todos",
-      }),
-      500,
-    )
-  }
+  return c.json([...todos.values()])
 })
 
 app.get("/api/todos/:todoId", (c) => {
@@ -1076,15 +803,45 @@ app.get("/api/todos/:todoId", (c) => {
 
   if (!todo) {
     return c.json(
-      TodoResult.Failure("TodoNotFound", {
+      {
         todoId,
         message: "Todo does not exist",
-      }),
+      },
       404,
     )
   }
 
-  return c.json(TodoResult.Success(todo))
+  return c.json(todo)
+})
+
+app.post("/api/todos/:todoId/complete", (c) => {
+  const todoId = c.req.param("todoId")
+  const todo = todos.get(todoId)
+
+  if (!todo) {
+    return c.json(
+      {
+        todoId,
+        message: "Todo does not exist",
+      },
+      404,
+    )
+  }
+
+  if (todo.completed) {
+    return c.json(
+      {
+        todoId,
+        message: "Todo is already completed",
+      },
+      409,
+    )
+  }
+
+  const completedTodo = { ...todo, completed: true }
+  todos.set(todoId, completedTodo)
+
+  return c.json(completedTodo)
 })
 ```
 
@@ -1093,21 +850,27 @@ app.get("/api/todos/:todoId", (c) => {
 ```tsx
 // src/client/todos.ts
 import { queryOptions } from "@tanstack/react-query"
-import { TodoListResult, TodoResult, TodoLoadFailed } from "../shared/todo-result"
+import { Result } from "@codeva-dev/typed-result"
+import {
+  TodoCouldNotBeCompletedBodySchema,
+  TodoListSchema,
+  TodoNotFoundBodySchema,
+  TodoSchema,
+} from "../shared/todo-result"
 
 export const todosQuery = queryOptions({
   queryKey: ["todos"],
   queryFn: async () => {
     const response = await fetch("/api/todos")
-    const payload = await response.json()
 
-    return TodoListResult.decode(payload, {
-      onInvalid: "failure",
-      failure: () =>
-        TodoLoadFailed.Failure({
-          message: "Todo API returned an invalid payload",
-        }),
-    })
+    if (!response.ok) {
+      throw new Error(`Todo API request failed with status ${response.status}`)
+    }
+
+    const payload = await response.json()
+    const todos = TodoListSchema.parse(payload)
+
+    return Result.Success(todos)
   },
 })
 
@@ -1118,44 +881,78 @@ export const todoQuery = (todoId: string) =>
       const response = await fetch(`/api/todos/${todoId}`)
       const payload = await response.json()
 
-      return TodoResult.decode(payload, {
-        onInvalid: "failure",
-        failure: () =>
-          TodoLoadFailed.Failure({
-            message: "Todo API returned an invalid payload",
-          }),
-      })
+      if (response.status === 404) {
+        const failure = TodoNotFoundBodySchema.parse(payload)
+        return Result.Failure("TodoNotFound", failure)
+      }
+
+      if (!response.ok) {
+        throw new Error(`Todo API request failed with status ${response.status}`)
+      }
+
+      const todo = TodoSchema.parse(payload)
+
+      return Result.Success(todo)
     },
   })
+
+export async function completeTodo(todoId: string) {
+  const response = await fetch(`/api/todos/${todoId}/complete`, {
+    method: "POST",
+  })
+
+  const payload = await response.json()
+
+  if (response.status === 404) {
+    const failure = TodoNotFoundBodySchema.parse(payload)
+    return Result.Failure("TodoNotFound", failure)
+  }
+
+  if (response.status === 409) {
+    const failure = TodoCouldNotBeCompletedBodySchema.parse(payload)
+    return Result.Failure("TodoCouldNotBeCompleted", failure)
+  }
+
+  if (!response.ok) {
+    throw new Error(`Todo API request failed with status ${response.status}`)
+  }
+
+  const todo = TodoSchema.parse(payload)
+
+  return Result.Success(todo)
+}
 ```
 
-Transport errors still belong to TanStack Query's error path. Typed application
-states belong to the `Result` value:
+The client adapter is the boundary. It decides which HTTP responses are
+actionable failures and which ones should go to the framework error path.
+Plain Zod schemas validate the unknown JSON payloads. The client adapter then
+wraps the validated payload with the core `Result.Success(...)` or
+`Result.Failure(...)` envelope constructors.
 
 ```tsx
 // src/routes/todos.tsx
 import { useSuspenseQuery } from "@tanstack/react-query"
 import { Match, MatchFailureTags } from "@codeva-dev/typed-result/react"
-import { todosQuery } from "../client/todos"
+import { todoQuery } from "../client/todos"
 
-export function TodosRoute() {
-  const { data } = useSuspenseQuery(todosQuery)
+export function TodoRoute({ todoId }: { readonly todoId: string }) {
+  const { data } = useSuspenseQuery(todoQuery(todoId))
 
   return (
     <Match
       result={data}
-      onSuccess={(todos) => (
-        <ul>
-          {todos.map((todo) => (
-            <li key={todo.id}>{todo.title}</li>
-          ))}
-        </ul>
+      onSuccess={(todo) => (
+        <article>
+          <h1>{todo.title}</h1>
+          <p>{todo.completed ? "Completed" : "Active"}</p>
+        </article>
       )}
       onFailure={(failure) => (
         <MatchFailureTags
           failure={failure}
           tags={{
-            TodoLoadFailed: (failure) => <p>{failure.message}</p>,
+            TodoNotFound: (failure) => <p>{failure.message}</p>,
+            TodoCouldNotBeCompleted: (failure) => <p>{failure.message}</p>,
             default: (failure) => <p>{failure._tag}</p>,
           }}
         />
@@ -1169,17 +966,21 @@ export function TodosRoute() {
 
 The same query can be preloaded in a TanStack Router loader:
 
-```ts
+```tsx
 import { createFileRoute } from "@tanstack/react-router"
-import { todosQuery } from "../client/todos"
+import { todoQuery } from "../client/todos"
 
-export const Route = createFileRoute("/todos")({
-  loader: ({ context }) => context.queryClient.ensureQueryData(todosQuery),
-  component: TodosRoute,
+export const Route = createFileRoute("/todos/$todoId")({
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(todoQuery(params.todoId)),
+  component: () => {
+    const { todoId } = Route.useParams()
+    return <TodoRoute todoId={todoId} />
+  },
 })
 ```
 
-The component still reads through `useSuspenseQuery(todosQuery)`, and the
+The component still reads through `useSuspenseQuery(todoQuery(todoId))`, and the
 loader-filled query cache provides the result.
 
 ## Package Exports
@@ -1187,9 +988,7 @@ loader-filled query cache provides the result.
 ```ts
 import { Result } from "@codeva-dev/typed-result"
 import { Match, MatchFailureTags, useResult } from "@codeva-dev/typed-result/react"
-import { Result as ZodResult, z } from "@codeva-dev/typed-result/zod"
-import { Result as EffectResult, Schema } from "@codeva-dev/typed-result/effect"
 ```
 
-The `/zod` and `/effect` subpaths re-export the core API and add
-schema-aware helpers. The main package stays framework-independent.
+The main package is framework-independent. React helpers live in the `/react`
+subpath.

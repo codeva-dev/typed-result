@@ -44,16 +44,6 @@
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js",
       "require": "./dist/react.cjs"
-    },
-    "./zod": {
-      "types": "./dist/zod.d.ts",
-      "import": "./dist/zod.js",
-      "require": "./dist/zod.cjs"
-    },
-    "./effect": {
-      "types": "./dist/effect.d.ts",
-      "import": "./dist/effect.js",
-      "require": "./dist/effect.cjs"
     }
   },
   "main": "./dist/index.cjs",
@@ -66,28 +56,18 @@
     "pack:dry": "npm pack --dry-run"
   },
   "peerDependencies": {
-    "effect": ">=3",
-    "react": ">=18",
-    "zod": ">=4"
+    "react": ">=18"
   },
   "peerDependenciesMeta": {
-    "effect": {
-      "optional": true
-    },
     "react": {
-      "optional": true
-    },
-    "zod": {
       "optional": true
     }
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
-    "effect": "^3.21.2",
     "react": "^19.2.0",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.4",
-    "zod": "^4.4.3"
+    "vitest": "^3.1.4"
   }
 }
