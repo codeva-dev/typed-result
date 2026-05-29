@@ -1,6 +1,6 @@
 {
   "name": "@codeva-dev/typed-result",
-  "version": "0.1.0-alpha.2",
+  "version": "1.0.0",
   "description": "A serializable typed Result model for boundary responses.",
   "keywords": [
     "result",
