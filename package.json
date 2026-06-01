@@ -15,11 +15,14 @@
 		"typed-result:typecheck": "npm run typecheck -w @codeva-dev/typed-result",
 		"typed-result:pack:dry": "npm pack --dry-run -w @codeva-dev/typed-result",
 		"release:check": "npm run typecheck && npm run test && npm run build && npm run pack:dry",
-		"version:alpha": "npm run release:check && npm version prerelease --preid alpha -w @codeva-dev/typed-result",
-		"publish:alpha": "npm run release:check && npm publish -w @codeva-dev/typed-result --tag alpha --access public",
-		"publish:alpha:check": "npm run release:check"
+		"changeset": "changeset",
+		"changeset:version": "changeset version",
+		"changeset:publish": "npm run release:check && changeset publish",
+		"changeset:pre:alpha": "changeset pre enter alpha",
+		"changeset:pre:exit": "changeset pre exit"
 	},
 	"devDependencies": {
+		"@changesets/cli": "^2.31.0",
 		"typescript": "^5.8.3"
 	}
 }

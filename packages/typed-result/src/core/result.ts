@@ -1,17 +1,23 @@
 export type TaggedFailure<T extends string = string, Fields extends object = {}> = {
 	readonly _tag: T;
-};
+} & Fields;
 
 export type TaggedFailureDefinition<T extends string, Fields extends object = object> = {
 	readonly _tag: T;
-	readonly make: (fields: Fields) => TaggedFailure<T> & Fields;
+	readonly make: (fields: Fields) => TaggedFailure<T, Fields>;
 };
 
 export type InferFailureTag<R> = R extends Failure<infer F> ? F['_tag'] : never;
-export type InferFailureByTag<R, T extends InferFailureTag<R>> =
-	R extends Failure<infer F> ? (F extends { readonly _tag: T } ? F : never) : never;
-export type InferFailureByTags<R, Tags extends ReadonlyArray<InferFailureTag<R>>> =
-	R extends Failure<infer F> ? (F extends { readonly _tag: Tags[number] } ? F : never) : never;
+export type InferFailureByTag<R, T extends InferFailureTag<R>> = R extends Failure<infer F>
+	? F extends { readonly _tag: T }
+		? F
+		: never
+	: never;
+export type InferFailureByTags<R, Tags extends ReadonlyArray<InferFailureTag<R>>> = R extends Failure<infer F>
+	? F extends { readonly _tag: Tags[number] }
+		? F
+		: never
+	: never;
 
 export function defineTaggedFailure<const T extends string, const Fields extends object = object>(
 	tag: T,
@@ -52,11 +58,11 @@ export function Failure<const F extends TaggedFailure>(f: F): Failure<F>;
 export function Failure<const T extends string, Fields extends object = {}>(
 	definition: TaggedFailureDefinition<T, Fields>,
 	fields: Fields,
-): Failure<TaggedFailure<T> & Fields>;
+): Failure<TaggedFailure<T, Fields>>;
 export function Failure<const T extends string, Fields extends object = {}>(
 	tag: T,
 	fields: Fields,
-): Failure<TaggedFailure<T> & Fields>;
+): Failure<TaggedFailure<T, Fields>>;
 
 export function Failure(
 	...args:
@@ -125,7 +131,7 @@ export function isFailure<R extends AnyResult>(r: unknown): r is Failure<Failure
 export function createTaggedFailure<const T extends string, Fields extends object = {}>(
 	tag: T,
 	fields: Fields,
-): TaggedFailure<T> & Fields {
+): TaggedFailure<T, Fields> {
 	return { _tag: tag, ...fields };
 }
 

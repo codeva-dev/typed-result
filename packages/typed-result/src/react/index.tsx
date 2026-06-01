@@ -7,7 +7,7 @@ import {
 	type SuccessType,
 	type SuccessOf,
 	type TaggedFailure,
-} from './index';
+} from '../core/index';
 
 export type UseResultReturn<R extends AnyResult> =
 	| {

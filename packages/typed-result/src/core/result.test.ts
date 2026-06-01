@@ -1,15 +1,32 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { Failure, Success, isFailure, isResult, isSuccess, type Failure as FailureBranch, type Result, type Success as SuccessBranch, type TaggedFailure } from './result.js';
+import {
+	Failure,
+	Success,
+	createTaggedFailure,
+	isFailure,
+	isResult,
+	isSuccess,
+	type Failure as FailureBranch,
+	type Result,
+	type Success as SuccessBranch,
+	type TaggedFailure,
+} from './result';
 
-type TaggedF1 = TaggedFailure<'TaggedF1'> & {
-	readonly message: 'Lorem ipsum dolor sit amet';
-	readonly code: 400;
-};
+type TaggedF1 = TaggedFailure<
+	'TaggedF1',
+	{
+		readonly message: 'Lorem ipsum dolor sit amet';
+		readonly code: 400;
+	}
+>;
 
-type TaggedF2 = TaggedFailure<'TaggedF2'> & {
-	readonly message: 'Consectetur adipiscing elit';
-	readonly code: 500;
-};
+type TaggedF2 = TaggedFailure<
+	'TaggedF2',
+	{
+		readonly message: 'Consectetur adipiscing elit';
+		readonly code: 500;
+	}
+>;
 
 const taggedF1: TaggedF1 = {
 	_tag: 'TaggedF1',
@@ -67,10 +84,15 @@ describe('Result type behavior', () => {
 	it('preserves success and failure branch types from constructors', () => {
 		const success = Success(1);
 		const failure = Failure(taggedF1);
+		const createdFailure = createTaggedFailure('TaggedF1', {
+			message: 'Lorem ipsum dolor sit amet' as const,
+			code: 400 as const,
+		});
 
 		expectTypeOf(success).toEqualTypeOf<SuccessBranch<number>>();
 		expectTypeOf(failure).toEqualTypeOf<FailureBranch<TaggedF1>>();
 		expectTypeOf(failure._tag).toEqualTypeOf<'TaggedF1'>();
+		expectTypeOf(createdFailure).toMatchTypeOf<TaggedF1>();
 	});
 
 	it('narrows success and failure result unions', () => {
