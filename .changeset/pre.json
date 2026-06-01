@@ -4,5 +4,7 @@
   "initialVersions": {
     "@codeva-dev/typed-result": "1.0.0"
   },
-  "changesets": []
+  "changesets": [
+    "early-buckets-promise"
+  ]
 }
