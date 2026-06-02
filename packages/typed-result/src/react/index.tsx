@@ -61,7 +61,17 @@ export type MatchProps<R extends AnyResult> = {
 	readonly throwOnInvalid?: boolean;
 };
 
-export function Match<R extends AnyResult>(props: MatchProps<R>): ReactNode {
+type MatchUnknownProps = {
+	readonly result: unknown;
+	readonly onSuccess: (success: unknown) => ReactNode;
+	readonly onFailure: (failure: TaggedFailure) => ReactNode;
+	readonly onInvalid?: (value: unknown) => ReactNode;
+	readonly throwOnInvalid?: boolean;
+};
+
+export function Match<R extends AnyResult>(props: MatchProps<R>): ReactNode;
+export function Match(props: MatchUnknownProps): ReactNode;
+export function Match<R extends AnyResult>(props: MatchProps<R> | MatchUnknownProps): ReactNode {
 	if (Result.isResult(props.result)) {
 		if (Result.isSuccess(props.result)) {
 			return props.onSuccess(props.result.value as SuccessOf<R>);

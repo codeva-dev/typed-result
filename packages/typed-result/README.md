@@ -48,6 +48,16 @@ npm install zod
 import { Result, unsafe_Schema } from '@codeva-dev/typed-result/zod';
 ```
 
+Experimental Effect Schema helpers:
+
+```sh
+npm install effect
+```
+
+```ts
+import { Result, unsafe_Schema } from '@codeva-dev/typed-result/effect';
+```
+
 ## Quick Example
 
 ```ts
@@ -600,6 +610,142 @@ return Result.Failure(
 
 `decode(...)` validates unknown boundary payloads. The Zod adapter currently targets Zod v4.
 
+`safeDecode(...)` validates unknown payloads and returns a core `Result` instead of throwing:
+
+```ts
+const decoded = Schema.safeDecode(TodoResult.Schema, payload);
+
+Result.match(decoded, {
+  onSuccess: (result) => result,
+  onFailure: (failure) => {
+    // failure._tag === "InvalidResult"
+    return failure.message;
+  },
+});
+```
+
+`encode(...)` converts a decoded Result value back to the schema encoded shape:
+
+```ts
+const encoded = TodoResult.encode(result);
+```
+
+## Experimental Effect Schema Support
+
+Effect Schema support is available from `@codeva-dev/typed-result/effect` and re-exports the core API. It is intentionally exposed as `unsafe_Schema` while the schema adapter API is being stabilized.
+
+```ts
+import { Effect, Schema as EffectSchema } from 'effect';
+import { Result, unsafe_Schema as Schema } from '@codeva-dev/typed-result/effect';
+
+const Todo = EffectSchema.Struct({
+  id: EffectSchema.String,
+  title: EffectSchema.String,
+});
+
+const TodoNotFound = Schema.TaggedFailure('TodoNotFound', {
+  todoId: EffectSchema.String,
+  message: EffectSchema.String,
+});
+
+const TodoResult = Schema.Result({
+  Success: Todo,
+  Failure: [TodoNotFound],
+});
+```
+
+`TaggedFailure(...)` creates an Effect Schema tagged error wrapper. The created values are native Error instances with a stable `_tag`, but they still encode to plain wire-safe objects:
+
+```ts
+const failure = TodoNotFound.make({
+  todoId: 'todo-1',
+  message: 'Todo does not exist',
+});
+
+const encoded = TodoNotFound.encode(failure);
+// { _tag: "TodoNotFound", todoId: "todo-1", message: "Todo does not exist" }
+```
+
+If you already use native Effect Schema `TaggedError` classes, wrap them with `fromTaggedError(...)`:
+
+```ts
+class TodoArchived extends EffectSchema.TaggedError<TodoArchived>()('TodoArchived', {
+  todoId: EffectSchema.String,
+  message: EffectSchema.String,
+}) {}
+
+const TodoArchivedFailure = Schema.fromTaggedError(TodoArchived);
+```
+
+Use `decode(...)` when an unknown boundary payload should become a synchronous core Result object:
+
+```ts
+const result = TodoResult.decode(payload);
+
+return Result.match(result, {
+  onSuccess: (todo) => todo.title,
+  onFailure: (failure) => failure.message,
+});
+```
+
+Use `decodeEffect(...)` when the decoded Result should immediately return to Effect channels:
+
+```ts
+const program = Effect.gen(function* () {
+  const todo = yield* TodoResult.decodeEffect(payload);
+  return todo.title;
+});
+```
+
+For schema decode errors, `decode(...)` throws and `decodeEffect(...)` dies. Invalid protocol payloads are non-actionable defects by default because the payload does not match the declared boundary contract.
+
+Use `safeDecode(...)` when invalid payloads should be represented as a core Result instead:
+
+```ts
+const decoded = Schema.safeDecode(TodoResult.Schema, payload);
+```
+
+### Effect Interop
+
+The Effect subpath adds three conversion helpers to the exported `Result` namespace.
+
+`Result.fromEffect(effect)` runs an Effect whose environment is already fully provided and resolves a `Promise<Result<S, F>>`:
+
+```ts
+const loadTodo = (todoId: string) =>
+  Effect.gen(function* () {
+    const todo = yield* TodoRepository.find(todoId);
+
+    if (!todo) {
+      return yield* Effect.fail(
+        TodoNotFound.make({
+          todoId,
+          message: 'Todo does not exist',
+        }),
+      );
+    }
+
+    return todo;
+  });
+
+const result = await Result.fromEffect(loadTodo('todo-1'));
+```
+
+`Result.fromEffectExit(exit)` converts an existing `Exit` into a Result envelope:
+
+```ts
+const exit = yield* Effect.exit(loadTodo('todo-1'));
+const result = Result.fromEffectExit(exit);
+```
+
+`Result.toEffect(result)` converts a Result envelope back into `Effect<S, F, never>`:
+
+```ts
+const todo = yield* Result.toEffect(result);
+```
+
+Effect defects are not converted into `Result.Failure(...)`. `fromEffect(...)` and `fromEffectExit(...)` convert only the typed Effect error channel. Defects are rethrown so they can travel through the runtime/framework error path.
+
 ## Boundary Styles
 
 There are two common ways to use this package at a boundary.
@@ -645,9 +791,10 @@ You can also return Result envelopes from HTTP endpoints if that is your chosen 
 import { Result } from '@codeva-dev/typed-result';
 import { Match, MatchFailureTags, useResult } from '@codeva-dev/typed-result/react';
 import { unsafe_Schema } from '@codeva-dev/typed-result/zod';
+import { unsafe_Schema as EffectSchema } from '@codeva-dev/typed-result/effect';
 ```
 
-The main package is framework-independent. React helpers live in the `/react` subpath. Experimental Zod helpers live in the `/zod` subpath.
+The main package is framework-independent. React helpers live in the `/react` subpath. Experimental Zod helpers live in the `/zod` subpath. Experimental Effect Schema helpers live in the `/effect` subpath.
 
 ## Example: Hono HTTP API With TanStack Query
 

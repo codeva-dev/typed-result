@@ -438,6 +438,33 @@ describe('Zod ResultSchema.Result', () => {
 		});
 	});
 
+	it('encodes decoded result payloads', () => {
+		const TodoResult = ResultSchema.Result({
+			Success: Todo,
+			Failure: [TodoNotFound, RandomFailure],
+		});
+
+		const decoded = TodoResult.decode({
+			_kind: 'Failure',
+			_tag: 'TodoNotFound',
+			failure: {
+				_tag: 'TodoNotFound',
+				message: 'Todo does not exist',
+				todoId: 'todo-1',
+			},
+		});
+
+		expect(TodoResult.encode(decoded)).toEqual({
+			_kind: 'Failure',
+			_tag: 'TodoNotFound',
+			failure: {
+				_tag: 'TodoNotFound',
+				message: 'Todo does not exist',
+				todoId: 'todo-1',
+			},
+		});
+	});
+
 	it('preserves transformed success output types', () => {
 		const Count = z4.object({
 			value: z4.string().transform((value) => Number(value)),

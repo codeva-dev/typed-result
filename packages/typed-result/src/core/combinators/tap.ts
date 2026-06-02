@@ -16,10 +16,10 @@ export function tapFailure<R extends AnyResult>(r: R, fn: (f: FailureOf<R>) => v
 
 export function tap<R extends AnyResult>(r: R, fn: (v: SuccessOf<R> | FailureOf<R>) => void): R {
 	if (isSuccess(r)) {
-		tapSuccess(r, fn);
+		fn(r.value as SuccessOf<R>);
+	} else if (isFailure(r)) {
+		fn(r.failure as FailureOf<R>);
 	}
-	if (isFailure(r)) {
-		tapFailure(r, fn);
-	}
+
 	return r;
 }

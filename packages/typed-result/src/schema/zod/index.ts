@@ -12,11 +12,11 @@ type TaggedFailureSchema<Tag extends string, Schema extends z4.ZodType> = {
 
 type NoTagFields<Fields extends z4.ZodRawShape> = '_tag' extends keyof Fields ? never : Fields;
 
-export const FailureSchema = z4.object({
+const FailureSchema = z4.object({
 	_tag: z4.string(),
 });
 
-class UnsafeSchema {
+class Schema {
 	static TaggedFailure<const Tag extends string, const Fields extends z4.ZodRawShape>(
 		tag: Tag,
 		fields: NoTagFields<Fields>,
@@ -90,10 +90,11 @@ class UnsafeSchema {
 			Type: {} as z4.output<typeof _>,
 			Encoded: {} as z4.input<typeof _>,
 			decode: (value: unknown) => _.parse(value),
+			encode: (value: z4.output<typeof _>): z4.input<typeof _> => _.encode(value),
 		} as const;
 	}
 
-	static safeDecode<Schema extends z4.ZodType>(schema: Schema, value: unknown) {
+	static safeDecode<DecodedSchema extends z4.ZodType>(schema: DecodedSchema, value: unknown) {
 		const parsed = schema.safeParse(value);
 
 		if (parsed.success) {
@@ -106,8 +107,8 @@ class UnsafeSchema {
 		});
 	}
 
-	static decode<Schema extends z4.ZodType>(schema: Schema, value: unknown) {
-		const result = UnsafeSchema.safeDecode(schema, value);
+	static decode<DecodedSchema extends z4.ZodType>(schema: DecodedSchema, value: unknown) {
+		const result = Schema.safeDecode(schema, value);
 		if (isSuccess(result)) {
 			return result.value;
 		}
@@ -116,4 +117,4 @@ class UnsafeSchema {
 	}
 }
 
-export const unsafe_Schema = UnsafeSchema;
+export const unsafe_Schema = Schema;
