@@ -20,6 +20,16 @@ Result values are plain serializable data. No methods are attached to returned i
 }
 ```
 
+## How To Read This Package
+
+The core package gives you the wire shape and the functions for creating, checking, transforming, matching, and unwrapping that shape. Use it when you already trust the value or when you intentionally create the value before it crosses a boundary.
+
+The React subpath gives you render helpers for already-created Result values. It does not validate unknown payloads.
+
+The experimental schema subpaths validate unknown Result envelopes when data comes back from a boundary. They are useful when the response itself is supposed to be a Result envelope, for example a TanStack Start server function response or an RPC-like JSON payload.
+
+For conventional REST APIs, you usually do not need a Result schema on the server. Let the HTTP API return normal HTTP status codes and plain JSON bodies, then convert those responses into `Result.Success(...)` or `Result.Failure(...)` in a small frontend adapter.
+
 ## Install
 
 ```sh
@@ -30,6 +40,12 @@ Core import:
 
 ```ts
 import { Result } from '@codeva-dev/typed-result';
+```
+
+The same core API is also available from `/core` when you want to be explicit:
+
+```ts
+import { Result } from '@codeva-dev/typed-result/core';
 ```
 
 React helpers:
@@ -85,6 +101,51 @@ const viewModel = Result.match(result, {
   },
 });
 ```
+
+## Boundary Styles
+
+There are two common ways to use this package at a boundary.
+
+### Result-Envelope Boundary
+
+Use this when you control the protocol and want the boundary message itself to be a `Result`.
+
+This is a good fit for TanStack Start server functions, RPC-like calls, worker messages, SSR payloads, queues, caches, localStorage, and other channels where HTTP semantics are not the main application protocol.
+
+In this style, expected application states travel as `Result.Failure(...)`. Unexpected non-actionable defects should still throw and use the runtime or framework error path.
+
+Create the Result envelope with the core constructors before it crosses the boundary:
+
+```ts
+return Result.Success(todo);
+```
+
+Then validate the unknown payload on the receiving side when runtime validation matters:
+
+```ts
+const result = TodoResult.decode(payload);
+```
+
+This style is usually the right choice when the call itself is the protocol: `getTodo`, `completeTodo`, `sendInvite`, `reserveBook`, and similar operation-oriented boundaries.
+
+### HTTP-Native Boundary
+
+Use this for public or conventional REST APIs.
+
+In this style, the server uses normal HTTP semantics:
+
+- `200` returns a plain success payload
+- `400`, `404`, `409`, or `422` can return expected actionable error payloads
+- `500` and other unexpected defects should use the framework error path
+
+The frontend client adapter turns the HTTP response into a `Result` for UI and TanStack Query usage.
+
+This style is usually the right choice when HTTP is intentionally part of the contract. For example, a `GET /todos/:todoId` endpoint can return `404` as an HTTP response, and the frontend can decide that this particular `404` is an actionable `TodoNotFound` failure. A `500`, invalid JSON response, or failed network request can still throw and remain in the TanStack Query error channel.
+
+You can also return Result envelopes from HTTP endpoints if that is your chosen protocol. The important part is to keep the two decisions explicit:
+
+- HTTP-native APIs return plain HTTP payloads and convert to `Result` in the client adapter
+- Result-envelope APIs return plain `Result` payloads and validate unknown payloads separately if the receiving side needs runtime validation
 
 ## Data Shape
 
@@ -608,9 +669,13 @@ return Result.Failure(
 );
 ```
 
-`decode(...)` validates unknown boundary payloads. The Zod adapter currently targets Zod v4.
+`decode(...)` validates an unknown Result envelope and returns the decoded core Result object. Use this when the payload is supposed to have `{ _kind: "Success" | "Failure", ... }` shape.
 
-`safeDecode(...)` validates unknown payloads and returns a core `Result` instead of throwing:
+It is not a replacement for parsing a plain REST response body. In an HTTP-native API, parse the body with Zod directly, then wrap that parsed value with `Result.Success(...)` or `Result.Failure(...)` in your fetch adapter.
+
+The Zod adapter currently targets Zod v4.
+
+`safeDecode(...)` validates an unknown Result envelope and returns a core `Result` instead of throwing. On invalid payloads, the returned failure tag is `InvalidResult`:
 
 ```ts
 const decoded = Schema.safeDecode(TodoResult.Schema, payload);
@@ -624,7 +689,7 @@ Result.match(decoded, {
 });
 ```
 
-`encode(...)` converts a decoded Result value back to the schema encoded shape:
+`encode(...)` converts a decoded Result envelope back to the schema encoded shape:
 
 ```ts
 const encoded = TodoResult.encode(result);
@@ -677,7 +742,7 @@ class TodoArchived extends EffectSchema.TaggedError<TodoArchived>()('TodoArchive
 const TodoArchivedFailure = Schema.fromTaggedError(TodoArchived);
 ```
 
-Use `decode(...)` when an unknown boundary payload should become a synchronous core Result object:
+Use `decode(...)` when an unknown Result envelope should become a synchronous core Result object:
 
 ```ts
 const result = TodoResult.decode(payload);
@@ -688,7 +753,7 @@ return Result.match(result, {
 });
 ```
 
-Use `decodeEffect(...)` when the decoded Result should immediately return to Effect channels:
+Use `decodeEffect(...)` when the decoded Result should immediately return to Effect channels. Success goes to the Effect success channel and failure goes to the Effect error channel:
 
 ```ts
 const program = Effect.gen(function* () {
@@ -699,7 +764,7 @@ const program = Effect.gen(function* () {
 
 For schema decode errors, `decode(...)` throws and `decodeEffect(...)` dies. Invalid protocol payloads are non-actionable defects by default because the payload does not match the declared boundary contract.
 
-Use `safeDecode(...)` when invalid payloads should be represented as a core Result instead:
+Use `safeDecode(...)` when invalid Result envelopes should be represented as a core Result instead. On invalid payloads, the returned failure tag is `InvalidResult`:
 
 ```ts
 const decoded = Schema.safeDecode(TodoResult.Schema, payload);
@@ -746,45 +811,6 @@ const todo = yield* Result.toEffect(result);
 
 Effect defects are not converted into `Result.Failure(...)`. `fromEffect(...)` and `fromEffectExit(...)` convert only the typed Effect error channel. Defects are rethrown so they can travel through the runtime/framework error path.
 
-## Boundary Styles
-
-There are two common ways to use this package at a boundary.
-
-### Result-Envelope Boundary
-
-Use this when you control the protocol and want the boundary message itself to be a `Result`.
-
-This is a good fit for TanStack Start server functions, RPC-like calls, worker messages, SSR payloads, queues, caches, localStorage, and other channels where HTTP semantics are not the main application protocol.
-
-In this style, expected application states travel as `Result.Failure(...)`. Unexpected non-actionable defects should still throw and use the runtime or framework error path.
-
-Create the Result envelope with the core constructors before it crosses the boundary:
-
-```ts
-return Result.Success(todo);
-```
-
-This style is usually the right choice when the call itself is the protocol: `getTodo`, `completeTodo`, `sendInvite`, `reserveBook`, and similar operation-oriented boundaries.
-
-### HTTP-Native Boundary
-
-Use this for public or conventional REST APIs.
-
-In this style, the server uses normal HTTP semantics:
-
-- `200` returns a plain success payload
-- `400`, `404`, `409`, or `422` can return expected actionable error payloads
-- `500` and other unexpected defects should use the framework error path
-
-The frontend client adapter turns the HTTP response into a `Result` for UI and TanStack Query usage.
-
-This style is usually the right choice when HTTP is intentionally part of the contract. For example, a `GET /todos/:todoId` endpoint can return `404` as an HTTP response, and the frontend can decide that this particular `404` is an actionable `TodoNotFound` failure. A `500`, invalid JSON response, or failed network request can still throw and remain in the TanStack Query error channel.
-
-You can also return Result envelopes from HTTP endpoints if that is your chosen protocol. The important part is to keep the two decisions explicit:
-
-- HTTP-native APIs return plain HTTP payloads and convert to `Result` in the client adapter
-- Result-envelope APIs return plain `Result` payloads and validate unknown payloads separately if the receiving side needs runtime validation
-
 ## Package Exports
 
 ```ts
@@ -794,7 +820,11 @@ import { unsafe_Schema } from '@codeva-dev/typed-result/zod';
 import { unsafe_Schema as EffectSchema } from '@codeva-dev/typed-result/effect';
 ```
 
-The main package is framework-independent. React helpers live in the `/react` subpath. Experimental Zod helpers live in the `/zod` subpath. Experimental Effect Schema helpers live in the `/effect` subpath.
+The main package and `/core` are framework-independent and expose the same core Result API. React helpers live in the `/react` subpath. Experimental Zod helpers live in the `/zod` subpath. Experimental Effect Schema helpers live in the `/effect` subpath.
+
+```ts
+import { Result } from '@codeva-dev/typed-result/core';
+```
 
 ## Example: Hono HTTP API With TanStack Query
 
@@ -1077,11 +1107,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Result } from '@codeva-dev/typed-result/zod';
 
 export function CompleteTodoButton(props: { readonly todoId: string }) {
-  const completeTodoFn = useServerFn(completeTodo);
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: () => completeTodoFn(props.todoId),
+    mutationFn: () => completeTodo(props.todoId),
     onSuccess: (result) => {
       Result.match(result, {
         onSuccess: () => {
