@@ -1,5 +1,5 @@
 ---
-"@codeva-dev/typed-result": minor
+'@codeva-dev/typed-result': minor
 ---
 
-Add experimental Zod schema support under the `/zod` subpath via `unsafe_Schema`.
+Add experimental Zod and Effect Schema support under the `/zod` and `/effect` subpaths via `unsafe_Schema`.
