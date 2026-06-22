@@ -540,7 +540,7 @@ Return type:
 
 ```ts
 type UseResultReturn<R> =
-  | {
+  (SuccessOf<R> extends never ? never : {
       readonly channel: 'success';
       readonly data: SuccessOf<R>;
       readonly failure: undefined;
@@ -548,8 +548,8 @@ type UseResultReturn<R> =
       readonly isSuccess: true;
       readonly isFailure: false;
       readonly result: Extract<R, SuccessType<unknown>>;
-    }
-  | {
+    })
+  | (FailureOf<R> extends never ? never : {
       readonly channel: 'failure';
       readonly data: undefined;
       readonly failure: FailureOf<R>;
@@ -557,7 +557,7 @@ type UseResultReturn<R> =
       readonly isSuccess: false;
       readonly isFailure: true;
       readonly result: Extract<R, FailureType<TaggedFailure>>;
-    };
+    });
 ```
 
 `useResult` intentionally does not have an invalid branch. Unknown boundary payloads should be decoded or checked before they reach this hook. For render boundaries that may receive unknown data, use `Match` with `onInvalid` or `throwOnInvalid`.
@@ -565,6 +565,8 @@ type UseResultReturn<R> =
 ### `Match`
 
 `Match` is a render boundary helper.
+
+`onSuccess` is required only when the result type can be a success. `onFailure` is required only when the result type can be a failure. For example, a `Success<T>` value can be rendered with only `onSuccess`; a `Result<T, F>` union still requires both handlers.
 
 ```tsx
 import { Match } from '@codeva-dev/typed-result/react';

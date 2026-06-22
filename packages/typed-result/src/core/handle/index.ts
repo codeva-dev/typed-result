@@ -1,5 +1,6 @@
 import { flatMapFailure, flatMapSuccess } from '../combinators/flat-map';
 import { match, matchFailureTag, matchFailureTags } from '../combinators/match';
+import type { MatchHandlers, MatchReturn } from '../combinators/match';
 import { tapFailure, tapSuccess } from '../combinators/tap';
 import { unwrap, unwrapOr, unwrapOrElse, unwrapOrNull, unwrapOrUndefined } from '../combinators/unwrap';
 import type { AnyResult, FailureOf, InferFailureByTag, InferFailureByTags, InferFailureTag, Result, SuccessOf } from '../result';
@@ -22,10 +23,7 @@ export type Handle<R extends AnyResult> = {
 	unwrapOrNull: () => SuccessOf<R> | null;
 	unwrapOrUndefined: () => SuccessOf<R> | undefined;
 	unwrapOrElse: <T>(fn: (failure: FailureOf<R>) => T) => SuccessOf<R> | T;
-	match: <SuccessT, FailureT>(handlers: {
-		onSuccess: (success: SuccessOf<R>) => SuccessT;
-		onFailure: (failure: FailureOf<R>) => FailureT;
-	}) => SuccessT | FailureT;
+	match: <SuccessT, FailureT>(handlers: MatchHandlers<R, SuccessT, FailureT>) => MatchReturn<R, SuccessT, FailureT>;
 	matchFailureTag: <
 		Tag extends InferFailureTag<R>,
 		Handlers extends {

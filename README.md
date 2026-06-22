@@ -37,6 +37,6 @@ npm run release:check
 Alpha release helpers:
 
 ```sh
-npm run version:alpha
-npm run publish:alpha
+npm run changeset:pre:alpha
+npm run changeset:publish
 ```

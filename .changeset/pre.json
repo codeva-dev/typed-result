@@ -5,6 +5,7 @@
     "@codeva-dev/typed-result": "1.0.0"
   },
   "changesets": [
-    "early-buckets-promise"
+    "early-buckets-promise",
+    "match-branch-handlers"
   ]
 }

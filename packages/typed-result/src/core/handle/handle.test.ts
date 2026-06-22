@@ -160,4 +160,19 @@ describe('handle', () => {
 		expect(value).toBe('F2');
 		expectTypeOf(value).toEqualTypeOf<'F1' | 'F2' | 'fallback'>();
 	});
+
+	it('does not require impossible branch handlers when matching from handle', () => {
+		const successValue = handle(Success(1)).match({
+			onSuccess: (success) => success + 1,
+		});
+
+		const failureValue = handle(Failure(F1)).match({
+			onFailure: (failure) => failure._tag,
+		});
+
+		expect(successValue).toBe(2);
+		expect(failureValue).toBe('F1');
+		expectTypeOf(successValue).toEqualTypeOf<number>();
+		expectTypeOf(failureValue).toEqualTypeOf<'F1'>();
+	});
 });

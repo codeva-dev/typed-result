@@ -10,7 +10,9 @@ import {
 } from '../core/index';
 
 export type UseResultReturn<R extends AnyResult> =
-	| {
+	([SuccessOf<R>] extends [never]
+		? never
+		: {
 			readonly channel: 'success';
 			readonly data: SuccessOf<R>;
 			readonly failure: undefined;
@@ -18,8 +20,10 @@ export type UseResultReturn<R extends AnyResult> =
 			readonly isFailure: false;
 			readonly isSuccess: true;
 			readonly result: Extract<R, SuccessType<unknown>>;
-	  }
-	| {
+		  }) |
+	([FailureOf<R>] extends [never]
+		? never
+		: {
 			readonly channel: 'failure';
 			readonly data: undefined;
 			readonly failure: FailureOf<R>;
@@ -27,7 +31,7 @@ export type UseResultReturn<R extends AnyResult> =
 			readonly isFailure: true;
 			readonly isSuccess: false;
 			readonly result: Extract<R, FailureType<TaggedFailure>>;
-	  };
+		  });
 
 export function useResult<R extends AnyResult>(result: R): UseResultReturn<R> {
 	if (Result.isSuccess(result)) {
@@ -39,7 +43,7 @@ export function useResult<R extends AnyResult>(result: R): UseResultReturn<R> {
 			isFailure: false,
 			isSuccess: true,
 			result: result as Extract<R, SuccessType<unknown>>,
-		};
+		} as UseResultReturn<R>;
 	}
 
 	return {
@@ -50,16 +54,27 @@ export function useResult<R extends AnyResult>(result: R): UseResultReturn<R> {
 		isFailure: true,
 		isSuccess: false,
 		result: result as Extract<R, FailureType<TaggedFailure>>,
-	};
+	} as UseResultReturn<R>;
 }
 
 export type MatchProps<R extends AnyResult> = {
 	readonly result: R;
-	readonly onSuccess: (success: SuccessOf<R>) => ReactNode;
-	readonly onFailure: (failure: FailureOf<R>) => ReactNode;
 	readonly onInvalid?: (value: unknown) => ReactNode;
 	readonly throwOnInvalid?: boolean;
-};
+} & ([SuccessOf<R>] extends [never]
+	? {
+			readonly onSuccess?: never;
+	  }
+	: {
+			readonly onSuccess: (success: SuccessOf<R>) => ReactNode;
+	  }) &
+	([FailureOf<R>] extends [never]
+	? {
+			readonly onFailure?: never;
+	  }
+	: {
+			readonly onFailure: (failure: FailureOf<R>) => ReactNode;
+	  });
 
 type MatchUnknownProps = {
 	readonly result: unknown;
@@ -69,16 +84,25 @@ type MatchUnknownProps = {
 	readonly throwOnInvalid?: boolean;
 };
 
-export function Match<R extends AnyResult>(props: MatchProps<R>): ReactNode;
-export function Match(props: MatchUnknownProps): ReactNode;
+export function Match<R>(
+	props: [R] extends [AnyResult] ? MatchProps<R> : MatchUnknownProps & { readonly result: R },
+): ReactNode;
 export function Match<R extends AnyResult>(props: MatchProps<R> | MatchUnknownProps): ReactNode {
 	if (Result.isResult(props.result)) {
 		if (Result.isSuccess(props.result)) {
-			return props.onSuccess(props.result.value as SuccessOf<R>);
+			if (props.onSuccess) {
+				return props.onSuccess(props.result.value as SuccessOf<R>);
+			}
+
+			throw new TypeError('Result.Match requires onSuccess when result is Success');
 		}
 
 		if (Result.isFailure(props.result)) {
-			return props.onFailure(props.result.failure as FailureOf<R>);
+			if (props.onFailure) {
+				return props.onFailure(props.result.failure as FailureOf<R>);
+			}
+
+			throw new TypeError('Result.Match requires onFailure when result is Failure');
 		}
 	}
 
