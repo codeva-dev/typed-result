@@ -1,5 +1,11 @@
 # @codeva-dev/typed-result
 
+## 1.1.0-alpha.3
+
+### Patch Changes
+
+- Add higher-level Effect boundary helpers for converting typed failures to Result envelopes while letting defects escape.
+
 ## 1.1.0-alpha.2
 
 ### Patch Changes

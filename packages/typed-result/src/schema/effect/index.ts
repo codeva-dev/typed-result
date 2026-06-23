@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Option, Schema as EffectSchema } from 'effect';
+import { Cause, Chunk, Effect, Exit, Runtime, Schema as EffectSchema } from 'effect';
 import {
 	Failure,
 	Result as CoreResult,
@@ -120,24 +120,125 @@ type DecodeEffect<DecodedSchema extends EffectSchema.Schema.AnyNoContext> = Effe
 	never
 >;
 
-export function fromEffectExit<A, E extends TaggedFailure>(exit: Exit.Exit<A, E>): CoreResultType<A, E> {
+export type EffectResultOptions<E, F extends TaggedFailure> = {
+	readonly mapFailure: (failure: E) => F;
+};
+
+type FailureMapper = (failure: any) => TaggedFailure;
+
+export type EffectResultMapperOptions<Mapper extends FailureMapper> = {
+	readonly mapFailure: Mapper;
+};
+
+export type MaybePromise<T> = T | Promise<T>;
+
+export type RuntimeProvider<R> =
+	| Runtime.Runtime<R>
+	| {
+			readonly runtime: () => MaybePromise<Runtime.Runtime<R>>;
+	  };
+
+export type RunEffect<R> = {
+	<A, E extends TaggedFailure>(effect: Effect.Effect<A, E, R>): Promise<CoreResultType<A, E>>;
+	<A, E, F extends TaggedFailure>(
+		effect: Effect.Effect<A, E, R>,
+		options: EffectResultOptions<E, F>,
+	): Promise<CoreResultType<A, F>>;
+};
+
+function throwIfDefectOrInterrupt<E>(cause: Cause.Cause<E>): void {
+	if (Chunk.isNonEmpty(Cause.defects(cause)) || Cause.isInterrupted(cause)) {
+		throw Cause.squash(cause);
+	}
+}
+
+function failureOrThrow<E>(cause: Cause.Cause<E>): E {
+	throwIfDefectOrInterrupt(cause);
+
+	const failures = Cause.failures(cause);
+	if (failures.length === 1) {
+		return Chunk.unsafeHead(failures);
+	}
+
+	throw Cause.squash(cause);
+}
+
+function resolveRuntime<R>(runtimeOrProvider: RuntimeProvider<R>): MaybePromise<Runtime.Runtime<R>> {
+	if (
+		runtimeOrProvider !== null &&
+		typeof runtimeOrProvider === 'object' &&
+		'runtime' in runtimeOrProvider &&
+		typeof runtimeOrProvider.runtime === 'function'
+	) {
+		return runtimeOrProvider.runtime();
+	}
+
+	return runtimeOrProvider as Runtime.Runtime<R>;
+}
+
+export function fromExit<A, E extends TaggedFailure>(exit: Exit.Exit<A, E>): CoreResultType<A, E>;
+export function fromExit<A, E, F extends TaggedFailure>(
+	exit: Exit.Exit<A, E>,
+	options: EffectResultOptions<E, F>,
+): CoreResultType<A, F>;
+export function fromExit<A, E, F extends TaggedFailure>(
+	exit: Exit.Exit<A, E>,
+	options?: EffectResultOptions<E, F>,
+): CoreResultType<A, any> {
 	if (Exit.isSuccess(exit)) {
 		return Success(exit.value);
 	}
 
-	const failure = Cause.failureOption(exit.cause);
-	if (Option.isSome(failure)) {
-		return Failure(failure.value);
-	}
-
-	throw Cause.squash(exit.cause);
+	const failure = failureOrThrow(exit.cause);
+	return Failure(options ? options.mapFailure(failure) : (failure as E & TaggedFailure));
 }
 
-export async function fromEffect<A, E extends TaggedFailure>(
+export function fromEffect<A, E extends TaggedFailure>(effect: Effect.Effect<A, E, never>): Promise<CoreResultType<A, E>>;
+export function fromEffect<A, E, F extends TaggedFailure>(
 	effect: Effect.Effect<A, E, never>,
-): Promise<CoreResultType<A, E>> {
+	options: EffectResultOptions<E, F>,
+): Promise<CoreResultType<A, F>>;
+export async function fromEffect<A, E, F extends TaggedFailure>(
+	effect: Effect.Effect<A, E, never>,
+	options?: EffectResultOptions<E, F>,
+): Promise<CoreResultType<A, any>> {
 	const exit = await Effect.runPromiseExit(effect);
-	return fromEffectExit(exit);
+	return fromExit(exit, options as EffectResultOptions<E, F>);
+}
+
+export function runEffect<R>(runtimeOrProvider: RuntimeProvider<R>): RunEffect<R>;
+export function runEffect<R, E, F extends TaggedFailure>(
+	runtimeOrProvider: RuntimeProvider<R>,
+	options: EffectResultOptions<E, F>,
+): <A>(effect: Effect.Effect<A, E, R>) => Promise<CoreResultType<A, F>>;
+export function runEffect<R, Mapper extends FailureMapper>(
+	runtimeOrProvider: RuntimeProvider<R>,
+	options: EffectResultMapperOptions<Mapper>,
+): <A, E extends Parameters<Mapper>[0]>(
+	effect: Effect.Effect<A, E, R>,
+) => Promise<CoreResultType<A, ReturnType<Mapper>>>;
+export function runEffect<R, E, F extends TaggedFailure>(
+	runtimeOrProvider: RuntimeProvider<R>,
+	outerOptions?: EffectResultOptions<E, F>,
+) {
+	return async <A, InnerE, InnerF extends TaggedFailure>(
+		effect: Effect.Effect<A, InnerE, R>,
+		innerOptions?: EffectResultOptions<InnerE, InnerF>,
+	) => {
+		const runtime = await resolveRuntime(runtimeOrProvider);
+		const exit = await Runtime.runPromiseExit(runtime)(effect);
+		const options = innerOptions ?? (outerOptions as unknown as EffectResultOptions<InnerE, InnerF> | undefined);
+
+		return options ? fromExit(exit, options) : fromExit(exit as Exit.Exit<A, InnerE & TaggedFailure>);
+	};
+}
+
+export const runWith = runEffect;
+
+export function toFailureTag<const E extends { readonly _tag: string }>(failure: E): TaggedFailure<E['_tag']> {
+	return {
+		_tag: failure._tag,
+	};
 }
 
 export function toEffect<S>(result: SuccessType<S>): Effect.Effect<S, never, never>;
@@ -291,8 +392,11 @@ class Schema {
 
 export const Result = {
 	...CoreResult,
+	fromExit,
 	fromEffect,
-	fromEffectExit,
+	runEffect,
+	runWith,
+	toFailureTag,
 	toEffect,
 } as const;
 

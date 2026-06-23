@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect';
+import { Cause, Effect, Exit, Runtime, Schema } from 'effect';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { Failure, Success, isFailure, isSuccess, type ResultType as CoreResultType } from '../../core';
 import { Result, unsafe_Schema as ResultSchema } from './index';
@@ -612,7 +612,7 @@ describe('Effect ResultSchema.Result', () => {
 	});
 });
 
-describe('Effect Result.fromEffectExit', () => {
+describe('Effect Result.fromExit', () => {
 	const TodoNotFound = ResultSchema.TaggedFailure('TodoNotFound', {
 		message: Schema.String,
 		todoId: Schema.String,
@@ -620,7 +620,7 @@ describe('Effect Result.fromEffectExit', () => {
 
 	it('maps successful exits into Success results', () => {
 		const exit = Effect.runSync(Effect.exit(Effect.succeed({ id: 'todo-1' })));
-		const result = Result.fromEffectExit(exit);
+		const result = Result.fromExit(exit);
 
 		expect(result).toEqual({
 			_kind: 'Success',
@@ -637,7 +637,7 @@ describe('Effect Result.fromEffectExit', () => {
 		});
 
 		const exit = Effect.runSync(Effect.exit(Effect.fail(failure)));
-		const result = Result.fromEffectExit(exit);
+		const result = Result.fromExit(exit);
 
 		expect(isFailure(result)).toBe(true);
 		if (isFailure(result)) {
@@ -649,8 +649,25 @@ describe('Effect Result.fromEffectExit', () => {
 	it('throws defects instead of converting them into Failure results', () => {
 		const exit = Effect.runSync(Effect.exit(Effect.die(new Error('boom'))));
 
-		expect(() => Result.fromEffectExit(exit)).toThrow('boom');
+		expect(() => Result.fromExit(exit)).toThrow('boom');
 	});
+
+	it('throws interrupted exits instead of converting them into Failure results', () => {
+		const exit = Effect.runSync(Effect.exit(Effect.interrupt));
+
+		expect(() => Result.fromExit(exit)).toThrow();
+	});
+
+	it('throws mixed failure and defect exits instead of converting the failure into Failure results', () => {
+		const failure = TodoNotFound.make({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const exit = Exit.failCause(Cause.parallel(Cause.fail(failure), Cause.die(new Error('boom'))));
+
+		expect(() => Result.fromExit(exit)).toThrow();
+	});
+
 });
 
 describe('Effect Result.fromEffect', () => {
@@ -685,6 +702,33 @@ describe('Effect Result.fromEffect', () => {
 		}
 	});
 
+	it('maps untagged Effect failures through mapFailure', async () => {
+		const result = await Result.fromEffect(Effect.fail({ code: 404, message: 'Missing' }), {
+			mapFailure: (failure) => ({
+				_tag: 'HttpFailure' as const,
+				code: failure.code,
+			}),
+		});
+
+		expect(result).toEqual({
+			_kind: 'Failure',
+			_tag: 'HttpFailure',
+			failure: {
+				_tag: 'HttpFailure',
+				code: 404,
+			},
+		});
+		expectTypeOf(result).toMatchTypeOf<
+			CoreResultType<
+				never,
+				{
+					readonly _tag: 'HttpFailure';
+					readonly code: number;
+				}
+			>
+		>();
+	});
+
 	it('requires the Effect environment to be provided before running', () => {
 		class TodoId extends Effect.Service<TodoId>()('TodoId', {
 			succeed: {
@@ -703,8 +747,93 @@ describe('Effect Result.fromEffect', () => {
 		}
 	});
 
+	it('requires raw Effect failures to be tagged unless mapFailure is provided', () => {
+		const effect = Effect.fail({ code: 404 });
+
+		if (false) {
+			// @ts-expect-error raw Effect failures must be tagged Result failures
+			Result.fromEffect(effect);
+
+			Result.fromEffect(effect, {
+				mapFailure: (failure) => ({
+					_tag: 'HttpFailure' as const,
+					code: failure.code,
+				}),
+			});
+		}
+	});
+
 	it('rejects defects instead of converting them into Failure results', async () => {
 		await expect(Result.fromEffect(Effect.die(new Error('boom')))).rejects.toThrow('boom');
+	});
+});
+
+describe('Effect Result.runEffect', () => {
+	const TodoNotFound = ResultSchema.TaggedFailure('TodoNotFound', {
+		message: Schema.String,
+		todoId: Schema.String,
+	});
+
+	it('runs effects with a Runtime instance', async () => {
+		const result = await Result.runEffect(Runtime.defaultRuntime)(Effect.succeed({ id: 'todo-1' }));
+
+		expect(result).toEqual(Success({ id: 'todo-1' }));
+	});
+
+	it('runs effects with an async Runtime provider', async () => {
+		const failure = TodoNotFound.make({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const provider = {
+			runtime: async () => Runtime.defaultRuntime,
+		};
+
+		const result = await Result.runEffect(provider)(Effect.fail(failure));
+
+		expect(result).toEqual(Failure(failure));
+	});
+
+	it('supports mapFailure through runtime execution', async () => {
+		const result = await Result.runEffect(Runtime.defaultRuntime, {
+			mapFailure: Result.toFailureTag,
+		})(Effect.fail({ _tag: 'TodoNotFound' as const, message: 'Todo does not exist' }));
+
+		expect(result).toEqual({
+			_kind: 'Failure',
+			_tag: 'TodoNotFound',
+			failure: {
+				_tag: 'TodoNotFound',
+			},
+		});
+		if (isFailure(result)) {
+			expectTypeOf(result.failure).toEqualTypeOf<{ readonly _tag: string }>();
+		}
+	});
+
+	it('supports runWith as a pipe-friendly alias', async () => {
+		const result = await Effect.succeed({ id: 'todo-1' }).pipe(Result.runWith(Runtime.defaultRuntime));
+
+		expect(result).toEqual(Success({ id: 'todo-1' }));
+	});
+});
+
+describe('Effect Result.toFailureTag', () => {
+	it('preserves literal tag unions', () => {
+		type FailureUnion =
+			| { readonly _tag: 'TodoNotFound'; readonly todoId: string }
+			| { readonly _tag: 'TodoArchived'; readonly todoId: string };
+
+		const failure = {
+			_tag: 'TodoNotFound',
+			todoId: 'todo-1',
+		} as FailureUnion;
+		const projected = Result.toFailureTag(failure);
+
+		expect(projected).toEqual({ _tag: 'TodoNotFound' });
+		expectTypeOf(projected).toEqualTypeOf<{
+			readonly _tag: 'TodoNotFound' | 'TodoArchived';
+		}>();
 	});
 });
 

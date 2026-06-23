@@ -6,6 +6,7 @@
   },
   "changesets": [
     "early-buckets-promise",
-    "match-branch-handlers"
+    "match-branch-handlers",
+    "effect-boundary-api"
   ]
 }

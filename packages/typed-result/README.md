@@ -774,7 +774,9 @@ const decoded = Schema.safeDecode(TodoResult.Schema, payload);
 
 ### Effect Interop
 
-The Effect subpath adds three conversion helpers to the exported `Result` namespace.
+The Effect subpath adds conversion helpers to the exported `Result` namespace for Effect boundary code.
+
+`Result.Failure(...)` is a tagged failure envelope, so the zero-glue Effect interop path expects the Effect error channel to already be a public tagged failure DTO. If the Effect error is a class, framework error, parser error, or any other non-boundary shape, use `mapFailure` to project it into a tagged boundary failure.
 
 `Result.fromEffect(effect)` runs an Effect whose environment is already fully provided and resolves a `Promise<Result<S, F>>`:
 
@@ -798,11 +800,44 @@ const loadTodo = (todoId: string) =>
 const result = await Result.fromEffect(loadTodo('todo-1'));
 ```
 
-`Result.fromEffectExit(exit)` converts an existing `Exit` into a Result envelope:
+`Result.fromExit(exit)` converts an existing `Exit` into a Result envelope:
 
 ```ts
 const exit = yield* Effect.exit(loadTodo('todo-1'));
-const result = Result.fromEffectExit(exit);
+const result = Result.fromExit(exit);
+```
+
+`Result.runEffect(runtimeOrProvider)` runs an Effect with a `Runtime` or an object that can lazily provide one:
+
+```ts
+const result = await Result.runEffect(runtime)(loadTodo('todo-1'));
+```
+
+For server boundaries where the command error channel is already a public tagged failure union, no projection is needed:
+
+```ts
+return await Result.runEffect(runtime)(command);
+```
+
+For boundaries that should expose only a transport DTO, pass `mapFailure`:
+
+```ts
+return await Result.runEffect(RuntimeServerLive, {
+  mapFailure: Result.toFailureTag,
+})(RequestMeeting(input).pipe(withAuthStateContext(context.authState)));
+```
+
+`Result.runWith(runtimeOrProvider)` is the same runner in pipe-friendly form:
+
+```ts
+const result = await loadTodo('todo-1').pipe(Result.runWith(runtime));
+```
+
+`Result.toFailureTag(error)` projects a tagged error object to `{ _tag }` while preserving the literal tag type:
+
+```ts
+const failure = Result.toFailureTag({ _tag: 'TodoNotFound' as const, message: 'Missing' });
+// { _tag: "TodoNotFound" }
 ```
 
 `Result.toEffect(result)` converts a Result envelope back into `Effect<S, F, never>`:
@@ -811,7 +846,7 @@ const result = Result.fromEffectExit(exit);
 const todo = yield* Result.toEffect(result);
 ```
 
-Effect defects are not converted into `Result.Failure(...)`. `fromEffect(...)` and `fromEffectExit(...)` convert only the typed Effect error channel. Defects are rethrown so they can travel through the runtime/framework error path.
+Effect defects are not converted into `Result.Failure(...)`. `fromEffect(...)`, `fromExit(...)`, `runEffect(...)`, and `runWith(...)` convert only a pure typed Effect failure. Defects, interruptions, unknown causes, and mixed causes that contain a defect or interruption are rethrown with `Cause.squash(cause)` so they can travel through the runtime/framework error path.
 
 ## Package Exports
 
