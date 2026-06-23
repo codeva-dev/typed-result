@@ -1,5 +1,11 @@
 # @codeva-dev/typed-result
 
+## 1.1.0-alpha.6
+
+### Patch Changes
+
+- Omit `cause?: unknown` from Effect `fromTaggedError(...)` public failure DTOs so domain-kit default errors remain serializable at server boundaries.
+
 ## 1.1.0-alpha.5
 
 ### Patch Changes

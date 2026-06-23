@@ -73,6 +73,23 @@ type TaggedErrorEncoded<TaggedError extends { readonly _tag: string }> =
 					readonly _tag: TaggedError['_tag'];
 				};
 
+type OmitUnknownCause<Encoded> = Encoded extends {
+	readonly cause?: infer Cause;
+}
+	? unknown extends Cause
+		? Omit<Encoded, 'cause'>
+		: Encoded
+	: Encoded;
+
+function omitCause<Encoded>(encoded: Encoded): Omit<Encoded, 'cause'> {
+	if (encoded === null || typeof encoded !== 'object' || !('cause' in encoded)) {
+		return encoded as Omit<Encoded, 'cause'>;
+	}
+
+	const { cause: _cause, ...publicEncoded } = encoded;
+	return publicEncoded as Omit<Encoded, 'cause'>;
+}
+
 type ResultSchemaSuccess<SuccessSchema extends EffectSchema.Schema.AnyNoContext> = {
 	readonly _kind: 'Success';
 	readonly value: EffectSchema.Schema.Type<SuccessSchema>;
@@ -292,20 +309,21 @@ class Schema {
 	static fromTaggedError<const TaggedError extends AnyTaggedErrorClassLike>(taggedError: TaggedError) {
 		type Failure = TaggedErrorType<TaggedError>;
 		type EncodedFailure = TaggedErrorEncoded<TaggedError>;
+		type PublicEncodedFailure = OmitUnknownCause<EncodedFailure>;
 		type Tag = EncodedFailure extends { readonly _tag: infer T extends string } ? T : TaggedError['_tag'];
 		type FieldsInput = TaggedErrorInput<TaggedError>;
 
 		return {
-			Schema: taggedError as unknown as EffectSchema.Schema<Failure, EncodedFailure, never>,
+			Schema: taggedError as unknown as EffectSchema.Schema<Failure, PublicEncodedFailure, never>,
 			Type: {} as Failure,
-			Encoded: {} as EncodedFailure,
+			Encoded: {} as PublicEncodedFailure,
 			_tag: taggedError._tag as Tag,
 			make: (fields: FieldsInput): Failure =>
 				(taggedError.make ? taggedError.make(fields) : new taggedError(fields as ConstructorParameters<TaggedError>[0])) as Failure,
 			decode: (value: unknown): Failure =>
 				EffectSchema.decodeUnknownSync(taggedError as unknown as EffectSchema.Schema<Failure, EncodedFailure, never>)(value),
-			encode: (value: Failure): EncodedFailure =>
-				EffectSchema.encodeUnknownSync(taggedError as unknown as EffectSchema.Schema<Failure, EncodedFailure, never>)(value),
+			encode: (value: Failure): PublicEncodedFailure =>
+				omitCause(EffectSchema.encodeUnknownSync(taggedError as unknown as EffectSchema.Schema<Failure, EncodedFailure, never>)(value)) as PublicEncodedFailure,
 		} as const;
 	}
 

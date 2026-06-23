@@ -755,6 +755,19 @@ const SchedulerParticipantNotFoundError = DomainError.Class('SchedulerParticipan
 const SchedulerParticipantNotFoundFailure = Schema.fromTaggedError(SchedulerParticipantNotFoundError);
 ```
 
+When the wrapped error has `cause?: unknown`, `fromTaggedError(...)` treats that field as internal diagnostic data and omits it from the encoded public failure DTO:
+
+```ts
+const failure = SchedulerParticipantNotFoundFailure.encode(
+  new SchedulerParticipantNotFoundError({
+    message: 'Participant not found',
+    cause: new Error('Repository details'),
+  }),
+);
+
+// { _tag: "SchedulerParticipantNotFoundError", message: "Participant not found" }
+```
+
 Use `decode(...)` when an unknown Result envelope should become a synchronous core Result object:
 
 ```ts

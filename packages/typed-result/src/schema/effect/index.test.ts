@@ -232,6 +232,49 @@ describe('Effect ResultSchema.fromTaggedError', () => {
 		void typecheck;
 	});
 
+	it('omits unknown cause fields from hidden Schema TaggedError public encodings', () => {
+		const MeetingSelfRequestError = Schema.TaggedError<DomainErrorInstance<
+			'MeetingSelfRequestError',
+			{
+				readonly message: string;
+				readonly cause?: unknown;
+			}
+		>>()('MeetingSelfRequestError', {
+			message: Schema.String,
+			cause: Schema.optional(Schema.Unknown),
+		}) as unknown as DomainErrorClass<
+			'MeetingSelfRequestError',
+			{
+				readonly message: string;
+				readonly cause?: unknown;
+			}
+		>;
+
+		const MeetingSelfRequestFailure = ResultSchema.fromTaggedError(MeetingSelfRequestError);
+		const failure = new MeetingSelfRequestError({
+			message: 'Cannot request yourself',
+			cause: new Error('internal cause'),
+		});
+
+		const encoded = MeetingSelfRequestFailure.encode(failure);
+
+		expect(encoded).toEqual({
+			_tag: 'MeetingSelfRequestError',
+			message: 'Cannot request yourself',
+		});
+		expect(encoded).not.toHaveProperty('cause');
+		const typecheck: {
+			readonly _tag: 'MeetingSelfRequestError';
+			readonly message: string;
+		} = encoded;
+		void typecheck;
+
+		if (false) {
+			// @ts-expect-error unknown cause is intentionally not part of the public failure DTO
+			encoded.cause;
+		}
+	});
+
 	it('can use native TaggedError wrappers in Result schemas', () => {
 		const Todo = Schema.Struct({
 			id: Schema.String,
@@ -677,6 +720,16 @@ describe('Effect Result.fromExit', () => {
 
 	const NativeTodoNotFoundFailure = ResultSchema.fromTaggedError(NativeTodoNotFound);
 
+	type DomainErrorInstance<TTag extends string, Fields extends object> = Error &
+		Fields & {
+			readonly _tag: TTag;
+		};
+
+	type DomainErrorClass<TTag extends string, Fields extends object> = {
+		readonly _tag: TTag;
+		new (props: Fields): DomainErrorInstance<TTag, Fields>;
+	};
+
 	it('maps successful exits into Success results', () => {
 		const exit = Effect.runSync(Effect.exit(Effect.succeed({ id: 'todo-1' })));
 		const result = Result.fromExit(exit);
@@ -744,6 +797,55 @@ describe('Effect Result.fromExit', () => {
 				todoId: 'todo-1',
 			},
 		});
+	});
+
+	it('omits unknown cause fields from Result failures created from hidden tagged error classes', () => {
+		const MeetingSelfRequestError = Schema.TaggedError<DomainErrorInstance<
+			'MeetingSelfRequestError',
+			{
+				readonly message: string;
+				readonly cause?: unknown;
+			}
+		>>()('MeetingSelfRequestError', {
+			message: Schema.String,
+			cause: Schema.optional(Schema.Unknown),
+		}) as unknown as DomainErrorClass<
+			'MeetingSelfRequestError',
+			{
+				readonly message: string;
+				readonly cause?: unknown;
+			}
+		>;
+		const failure = new MeetingSelfRequestError({
+			message: 'Cannot request yourself',
+			cause: new Error('internal cause'),
+		});
+		const exit: Exit.Exit<never, InstanceType<typeof MeetingSelfRequestError>> = Effect.runSync(
+			Effect.exit(Effect.fail(failure)),
+		);
+
+		const result = Result.fromExit(exit, {
+			onError: {
+				MeetingSelfRequestError: ResultSchema.fromTaggedError(MeetingSelfRequestError),
+			},
+		});
+
+		expect(result).toEqual({
+			_kind: 'Failure',
+			_tag: 'MeetingSelfRequestError',
+			failure: {
+				_tag: 'MeetingSelfRequestError',
+				message: 'Cannot request yourself',
+			},
+		});
+		const typecheck: CoreResultType<
+			never,
+			{
+				readonly _tag: 'MeetingSelfRequestError';
+				readonly message: string;
+			}
+		> = result;
+		void typecheck;
 	});
 
 	it('throws unlisted tagged failures instead of converting them', () => {
