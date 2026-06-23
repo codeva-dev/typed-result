@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Runtime, Schema } from 'effect';
+import { Cause, Effect, Exit, FiberId, Schema } from 'effect';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { Failure, Success, isFailure, isSuccess, type ResultType as CoreResultType } from '../../core';
 import { Result, unsafe_Schema as ResultSchema } from './index';
@@ -617,6 +617,16 @@ describe('Effect Result.fromExit', () => {
 		message: Schema.String,
 		todoId: Schema.String,
 	});
+	const TodoArchived = ResultSchema.TaggedFailure('TodoArchived', {
+		todoId: Schema.String,
+	});
+
+	class NativeTodoNotFound extends Schema.TaggedError<NativeTodoNotFound>()('TodoNotFound', {
+		message: Schema.String,
+		todoId: Schema.String,
+	}) {}
+
+	const NativeTodoNotFoundFailure = ResultSchema.fromTaggedError(NativeTodoNotFound);
 
 	it('maps successful exits into Success results', () => {
 		const exit = Effect.runSync(Effect.exit(Effect.succeed({ id: 'todo-1' })));
@@ -630,20 +640,130 @@ describe('Effect Result.fromExit', () => {
 		});
 	});
 
-	it('maps failed exits into Failure results', () => {
+	it('maps whitelisted tagged failures into Failure results using ResultSchema.TaggedFailure', () => {
 		const failure = TodoNotFound.make({
 			message: 'Todo does not exist',
 			todoId: 'todo-1',
 		});
 
 		const exit = Effect.runSync(Effect.exit(Effect.fail(failure)));
-		const result = Result.fromExit(exit);
+		const result = Result.fromExit(exit, {
+			onError: {
+				TodoNotFound,
+			},
+		});
 
-		expect(isFailure(result)).toBe(true);
-		if (isFailure(result)) {
-			expect(result.failure).toBe(failure);
-			expect(result.failure._tag).toBe('TodoNotFound');
+		expect(result).toEqual({
+			_kind: 'Failure',
+			_tag: 'TodoNotFound',
+			failure: {
+				_tag: 'TodoNotFound',
+				message: 'Todo does not exist',
+				todoId: 'todo-1',
+			},
+		});
+		const typecheck: CoreResultType<
+			never,
+			{
+				readonly _tag: 'TodoNotFound';
+				readonly message: string;
+				readonly todoId: string;
+			}
+		> = result;
+		void typecheck;
+	});
+
+	it('maps whitelisted native Effect Schema TaggedError classes through fromTaggedError', () => {
+		const failure = new NativeTodoNotFound({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const exit: Exit.Exit<never, NativeTodoNotFound> = Effect.runSync(Effect.exit(Effect.fail(failure)));
+
+		const result = Result.fromExit(exit, {
+			onError: {
+				TodoNotFound: NativeTodoNotFoundFailure,
+			},
+		});
+
+		expect(result).toEqual({
+			_kind: 'Failure',
+			_tag: 'TodoNotFound',
+			failure: {
+				_tag: 'TodoNotFound',
+				message: 'Todo does not exist',
+				todoId: 'todo-1',
+			},
+		});
+	});
+
+	it('throws unlisted tagged failures instead of converting them', () => {
+		const failure = TodoArchived.make({
+			todoId: 'todo-1',
+		});
+		const exit: Exit.Exit<never, typeof TodoNotFound.Type | typeof TodoArchived.Type> = Effect.runSync(
+			Effect.exit(Effect.fail(failure)),
+		);
+
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+				},
+			}),
+		).toThrow();
+	});
+
+	it('does not include unlisted failures in the returned Result type', () => {
+		const failure = TodoNotFound.make({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const exit = Effect.runSync(Effect.exit(Effect.fail(failure)));
+		const result = Result.fromExit(exit, {
+			onError: {
+				TodoNotFound,
+			},
+		});
+
+		const typecheck: CoreResultType<
+			never,
+			{
+				readonly _tag: 'TodoNotFound';
+				readonly message: string;
+				readonly todoId: string;
+			}
+		> = result;
+		void typecheck;
+	});
+
+	it('rejects handlers whose key and encoded tag do not match at type level', () => {
+		const exit = Effect.runSync(Effect.exit(Effect.fail(TodoNotFound.make({ message: 'Missing', todoId: 'todo-1' }))));
+
+		if (false) {
+			Result.fromExit(exit, {
+				onError: {
+					// @ts-expect-error handler tag must match its object key
+					TodoNotFound: TodoArchived,
+				},
+			});
 		}
+	});
+
+	it('throws if a handler is incorrectly cast with a mismatched runtime tag', () => {
+		const failure = TodoNotFound.make({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const exit = Effect.runSync(Effect.exit(Effect.fail(failure)));
+
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound: TodoArchived as never,
+				},
+			}),
+		).toThrow('handler tag mismatch');
 	});
 
 	it('throws defects instead of converting them into Failure results', () => {
@@ -665,14 +785,171 @@ describe('Effect Result.fromExit', () => {
 		});
 		const exit = Exit.failCause(Cause.parallel(Cause.fail(failure), Cause.die(new Error('boom'))));
 
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+				},
+			}),
+		).toThrow();
+	});
+
+	it('throws sequential mixed failure and defect exits', () => {
+		const failure = TodoNotFound.make({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const exit = Exit.failCause(Cause.sequential(Cause.fail(failure), Cause.die(new Error('boom'))));
+
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+				},
+			}),
+		).toThrow();
+	});
+
+	it('throws mixed failure and interruption exits', () => {
+		const failure = TodoNotFound.make({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const exit = Exit.failCause(Cause.parallel(Cause.fail(failure), Cause.interrupt(FiberId.none)));
+
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+				},
+			}),
+		).toThrow();
+	});
+
+	it('throws multiple pure failures instead of choosing one', () => {
+		const first = TodoNotFound.make({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const second = TodoArchived.make({
+			todoId: 'todo-1',
+		});
+		const exit = Exit.failCause(Cause.parallel(Cause.fail(first), Cause.fail(second)));
+
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+					TodoArchived,
+				},
+			}),
+		).toThrow();
+	});
+
+	it('throws sequential multiple pure failures instead of choosing one', () => {
+		const first = TodoNotFound.make({
+			message: 'Todo does not exist',
+			todoId: 'todo-1',
+		});
+		const second = TodoArchived.make({
+			todoId: 'todo-1',
+		});
+		const exit = Exit.failCause(Cause.sequential(Cause.fail(first), Cause.fail(second)));
+
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+					TodoArchived,
+				},
+			}),
+		).toThrow();
+	});
+
+	it('throws multiple pure failures with the same tag instead of choosing one', () => {
+		const first = TodoNotFound.make({
+			message: 'First missing todo',
+			todoId: 'todo-1',
+		});
+		const second = TodoNotFound.make({
+			message: 'Second missing todo',
+			todoId: 'todo-2',
+		});
+		const exit = Exit.failCause(Cause.parallel(Cause.fail(first), Cause.fail(second)));
+
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+				},
+			}),
+		).toThrow();
+	});
+
+	it('throws empty unknown causes', () => {
+		const exit = Exit.failCause(Cause.empty);
+
 		expect(() => Result.fromExit(exit)).toThrow();
 	});
 
+	it('requires an onError whitelist for failure-capable exits', () => {
+		const exit = Effect.runSync(Effect.exit(Effect.fail(TodoNotFound.make({ message: 'Missing', todoId: 'todo-1' }))));
+
+		if (false) {
+			// @ts-expect-error failure-capable exits require an explicit onError whitelist
+			Result.fromExit(exit);
+		}
+	});
+
+	it('rejects handlers for impossible failure tags at type level', () => {
+		const exit = Effect.runSync(Effect.exit(Effect.fail(TodoNotFound.make({ message: 'Missing', todoId: 'todo-1' }))));
+
+		if (false) {
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+					// @ts-expect-error TodoArchived is not in this Exit error channel
+					TodoArchived,
+				},
+			});
+		}
+	});
+
+	it('rejects untagged Effect failures at type level', () => {
+		const effect = Effect.fail({ code: 404 });
+
+		if (false) {
+			// @ts-expect-error Effect failures must be tagged for Result boundary conversion
+			Result.fromEffect(effect, {
+				onError: {},
+			});
+		}
+	});
+
+	it('propagates schema encode failures from whitelisted handlers', () => {
+		const invalidFailure = {
+			_tag: 'TodoNotFound' as const,
+			message: 'Todo does not exist',
+			todoId: 123,
+		} as unknown as typeof TodoNotFound.Type;
+		const exit = Effect.runSync(Effect.exit(Effect.fail(invalidFailure)));
+
+		expect(() =>
+			Result.fromExit(exit, {
+				onError: {
+					TodoNotFound,
+				},
+			}),
+		).toThrow();
+	});
 });
 
 describe('Effect Result.fromEffect', () => {
 	const TodoNotFound = ResultSchema.TaggedFailure('TodoNotFound', {
 		message: Schema.String,
+		todoId: Schema.String,
+	});
+	const TodoArchived = ResultSchema.TaggedFailure('TodoArchived', {
 		todoId: Schema.String,
 	});
 
@@ -693,40 +970,21 @@ describe('Effect Result.fromEffect', () => {
 			todoId: 'todo-1',
 		});
 
-		const result = await Result.fromEffect(Effect.fail(failure));
-
-		expect(isFailure(result)).toBe(true);
-		if (isFailure(result)) {
-			expect(result.failure).toBe(failure);
-			expect(result.failure._tag).toBe('TodoNotFound');
-		}
-	});
-
-	it('maps untagged Effect failures through mapFailure', async () => {
-		const result = await Result.fromEffect(Effect.fail({ code: 404, message: 'Missing' }), {
-			mapFailure: (failure) => ({
-				_tag: 'HttpFailure' as const,
-				code: failure.code,
-			}),
+		const result = await Result.fromEffect(Effect.fail(failure), {
+			onError: {
+				TodoNotFound,
+			},
 		});
 
 		expect(result).toEqual({
 			_kind: 'Failure',
-			_tag: 'HttpFailure',
+			_tag: 'TodoNotFound',
 			failure: {
-				_tag: 'HttpFailure',
-				code: 404,
+				_tag: 'TodoNotFound',
+				message: 'Todo does not exist',
+				todoId: 'todo-1',
 			},
 		});
-		expectTypeOf(result).toMatchTypeOf<
-			CoreResultType<
-				never,
-				{
-					readonly _tag: 'HttpFailure';
-					readonly code: number;
-				}
-			>
-		>();
 	});
 
 	it('requires the Effect environment to be provided before running', () => {
@@ -747,93 +1005,37 @@ describe('Effect Result.fromEffect', () => {
 		}
 	});
 
-	it('requires raw Effect failures to be tagged unless mapFailure is provided', () => {
-		const effect = Effect.fail({ code: 404 });
+	it('requires an explicit onError whitelist for failure-capable effects', () => {
+		const effect = Effect.fail(TodoNotFound.make({ message: 'Missing', todoId: 'todo-1' }));
 
 		if (false) {
-			// @ts-expect-error raw Effect failures must be tagged Result failures
+			// @ts-expect-error failure-capable effects require an explicit onError whitelist
 			Result.fromEffect(effect);
-
-			Result.fromEffect(effect, {
-				mapFailure: (failure) => ({
-					_tag: 'HttpFailure' as const,
-					code: failure.code,
-				}),
-			});
 		}
+	});
+
+	it('throws unlisted effect failures', async () => {
+		const failure = TodoArchived.make({
+			todoId: 'todo-1',
+		});
+
+		const effect: Effect.Effect<never, typeof TodoNotFound.Type | typeof TodoArchived.Type, never> = Effect.fail(failure);
+
+		await expect(
+			Result.fromEffect(effect, {
+				onError: {
+					TodoNotFound,
+				},
+			}),
+		).rejects.toThrow();
 	});
 
 	it('rejects defects instead of converting them into Failure results', async () => {
 		await expect(Result.fromEffect(Effect.die(new Error('boom')))).rejects.toThrow('boom');
 	});
-});
 
-describe('Effect Result.runEffect', () => {
-	const TodoNotFound = ResultSchema.TaggedFailure('TodoNotFound', {
-		message: Schema.String,
-		todoId: Schema.String,
-	});
-
-	it('runs effects with a Runtime instance', async () => {
-		const result = await Result.runEffect(Runtime.defaultRuntime)(Effect.succeed({ id: 'todo-1' }));
-
-		expect(result).toEqual(Success({ id: 'todo-1' }));
-	});
-
-	it('runs effects with an async Runtime provider', async () => {
-		const failure = TodoNotFound.make({
-			message: 'Todo does not exist',
-			todoId: 'todo-1',
-		});
-		const provider = {
-			runtime: async () => Runtime.defaultRuntime,
-		};
-
-		const result = await Result.runEffect(provider)(Effect.fail(failure));
-
-		expect(result).toEqual(Failure(failure));
-	});
-
-	it('supports mapFailure through runtime execution', async () => {
-		const result = await Result.runEffect(Runtime.defaultRuntime, {
-			mapFailure: Result.toFailureTag,
-		})(Effect.fail({ _tag: 'TodoNotFound' as const, message: 'Todo does not exist' }));
-
-		expect(result).toEqual({
-			_kind: 'Failure',
-			_tag: 'TodoNotFound',
-			failure: {
-				_tag: 'TodoNotFound',
-			},
-		});
-		if (isFailure(result)) {
-			expectTypeOf(result.failure).toEqualTypeOf<{ readonly _tag: string }>();
-		}
-	});
-
-	it('supports runWith as a pipe-friendly alias', async () => {
-		const result = await Effect.succeed({ id: 'todo-1' }).pipe(Result.runWith(Runtime.defaultRuntime));
-
-		expect(result).toEqual(Success({ id: 'todo-1' }));
-	});
-});
-
-describe('Effect Result.toFailureTag', () => {
-	it('preserves literal tag unions', () => {
-		type FailureUnion =
-			| { readonly _tag: 'TodoNotFound'; readonly todoId: string }
-			| { readonly _tag: 'TodoArchived'; readonly todoId: string };
-
-		const failure = {
-			_tag: 'TodoNotFound',
-			todoId: 'todo-1',
-		} as FailureUnion;
-		const projected = Result.toFailureTag(failure);
-
-		expect(projected).toEqual({ _tag: 'TodoNotFound' });
-		expectTypeOf(projected).toEqualTypeOf<{
-			readonly _tag: 'TodoNotFound' | 'TodoArchived';
-		}>();
+	it('rejects interruptions instead of converting them into Failure results', async () => {
+		await expect(Result.fromEffect(Effect.interrupt)).rejects.toThrow();
 	});
 });
 
@@ -989,10 +1191,14 @@ describe('Effect schema and core Result integration', () => {
 			}),
 		);
 
-		const result = await Result.fromEffect(effect);
+		const result = await Result.fromEffect(effect, {
+			onError: {
+				TodoNotFound,
+			},
+		});
 
 		const mapped = Result.mapFailureTag(result, 'TodoNotFound', (failure) => {
-			expect(failure).toBeInstanceOf(Error);
+			expect(failure).not.toBeInstanceOf(Error);
 			return TodoCouldNotBeLoaded.make({
 				message: `Could not load ${failure.todoId}`,
 			});
@@ -1022,6 +1228,11 @@ describe('Effect schema and core Result integration', () => {
 					message: 'Todo already completed',
 				}),
 			),
+			{
+				onError: {
+					TodoConflict,
+				},
+			},
 		);
 
 		expect(Result.unwrap(success)).toEqual({
@@ -1032,7 +1243,7 @@ describe('Effect schema and core Result integration', () => {
 		expect(Result.unwrapOrUndefined(failure)).toBeUndefined();
 		expect(
 			Result.unwrapOrElse(failure, (failure) => {
-				expect(failure).toBeInstanceOf(Error);
+				expect(failure).not.toBeInstanceOf(Error);
 				return failure.message;
 			}),
 		).toBe('Todo already completed');

@@ -1,4 +1,4 @@
-import { Cause, Chunk, Effect, Exit, Runtime, Schema as EffectSchema } from 'effect';
+import { Cause, Chunk, Effect, Exit, Schema as EffectSchema } from 'effect';
 import {
 	Failure,
 	Result as CoreResult,
@@ -120,31 +120,36 @@ type DecodeEffect<DecodedSchema extends EffectSchema.Schema.AnyNoContext> = Effe
 	never
 >;
 
-export type EffectResultOptions<E, F extends TaggedFailure> = {
-	readonly mapFailure: (failure: E) => F;
+export type EffectErrorWithTag = {
+	readonly _tag: string;
 };
 
-type FailureMapper = (failure: any) => TaggedFailure;
-
-export type EffectResultMapperOptions<Mapper extends FailureMapper> = {
-	readonly mapFailure: Mapper;
+export type EffectFailureEncoder<Tag extends string, Failure extends EffectErrorWithTag, Encoded extends TaggedFailure> = {
+	readonly _tag: Tag;
+	readonly encode: (failure: Failure) => Encoded;
 };
 
-export type MaybePromise<T> = T | Promise<T>;
+export type EffectFailureHandlers<E extends EffectErrorWithTag> = Partial<{
+	readonly [Tag in E['_tag']]: EffectFailureEncoder<Tag, Extract<E, { readonly _tag: Tag }>, TaggedFailure<Tag>>;
+}>;
 
-export type RuntimeProvider<R> =
-	| Runtime.Runtime<R>
-	| {
-			readonly runtime: () => MaybePromise<Runtime.Runtime<R>>;
-	  };
-
-export type RunEffect<R> = {
-	<A, E extends TaggedFailure>(effect: Effect.Effect<A, E, R>): Promise<CoreResultType<A, E>>;
-	<A, E, F extends TaggedFailure>(
-		effect: Effect.Effect<A, E, R>,
-		options: EffectResultOptions<E, F>,
-	): Promise<CoreResultType<A, F>>;
+type NoExtraFailureHandlers<E extends EffectErrorWithTag, Handlers> = Handlers & {
+	readonly [Tag in Exclude<keyof Handlers, E['_tag']>]: never;
 };
+
+export type EffectResultOptions<E extends EffectErrorWithTag, Handlers extends EffectFailureHandlers<E>> = {
+	readonly onError: NoExtraFailureHandlers<E, Handlers>;
+};
+
+type EncodedFailureFromHandlers<Handlers> = {
+	readonly [Key in keyof Handlers]: Handlers[Key] extends {
+		readonly encode: (...args: any) => infer Encoded;
+	}
+		? Encoded extends TaggedFailure
+			? Encoded
+			: never
+		: never;
+}[keyof Handlers];
 
 function throwIfDefectOrInterrupt<E>(cause: Cause.Cause<E>): void {
 	if (Chunk.isNonEmpty(Cause.defects(cause)) || Cause.isInterrupted(cause)) {
@@ -163,82 +168,46 @@ function failureOrThrow<E>(cause: Cause.Cause<E>): E {
 	throw Cause.squash(cause);
 }
 
-function resolveRuntime<R>(runtimeOrProvider: RuntimeProvider<R>): MaybePromise<Runtime.Runtime<R>> {
-	if (
-		runtimeOrProvider !== null &&
-		typeof runtimeOrProvider === 'object' &&
-		'runtime' in runtimeOrProvider &&
-		typeof runtimeOrProvider.runtime === 'function'
-	) {
-		return runtimeOrProvider.runtime();
-	}
-
-	return runtimeOrProvider as Runtime.Runtime<R>;
-}
-
-export function fromExit<A, E extends TaggedFailure>(exit: Exit.Exit<A, E>): CoreResultType<A, E>;
-export function fromExit<A, E, F extends TaggedFailure>(
+export function fromExit<A>(exit: Exit.Exit<A, never>): CoreResultType<A, never>;
+export function fromExit<A, E extends EffectErrorWithTag, Handlers extends EffectFailureHandlers<E>>(
 	exit: Exit.Exit<A, E>,
-	options: EffectResultOptions<E, F>,
-): CoreResultType<A, F>;
-export function fromExit<A, E, F extends TaggedFailure>(
+	options: EffectResultOptions<E, Handlers>,
+): CoreResultType<A, EncodedFailureFromHandlers<Handlers>>;
+export function fromExit<A, E extends EffectErrorWithTag, Handlers extends EffectFailureHandlers<E>>(
 	exit: Exit.Exit<A, E>,
-	options?: EffectResultOptions<E, F>,
+	options?: EffectResultOptions<E, Handlers>,
 ): CoreResultType<A, any> {
 	if (Exit.isSuccess(exit)) {
 		return Success(exit.value);
 	}
 
 	const failure = failureOrThrow(exit.cause);
-	return Failure(options ? options.mapFailure(failure) : (failure as E & TaggedFailure));
+	const handler = options?.onError[failure._tag as keyof Handlers] as
+		| EffectFailureEncoder<string, EffectErrorWithTag, TaggedFailure>
+		| undefined;
+
+	if (!handler) {
+		throw failure;
+	}
+
+	if (handler._tag !== failure._tag) {
+		throw new TypeError(`Result.fromExit handler tag mismatch: expected ${failure._tag}, got ${handler._tag}`);
+	}
+
+	return Failure(handler.encode(failure));
 }
 
-export function fromEffect<A, E extends TaggedFailure>(effect: Effect.Effect<A, E, never>): Promise<CoreResultType<A, E>>;
-export function fromEffect<A, E, F extends TaggedFailure>(
+export function fromEffect<A>(effect: Effect.Effect<A, never, never>): Promise<CoreResultType<A, never>>;
+export function fromEffect<A, E extends EffectErrorWithTag, Handlers extends EffectFailureHandlers<E>>(
 	effect: Effect.Effect<A, E, never>,
-	options: EffectResultOptions<E, F>,
-): Promise<CoreResultType<A, F>>;
-export async function fromEffect<A, E, F extends TaggedFailure>(
+	options: EffectResultOptions<E, Handlers>,
+): Promise<CoreResultType<A, EncodedFailureFromHandlers<Handlers>>>;
+export async function fromEffect<A, E extends EffectErrorWithTag, Handlers extends EffectFailureHandlers<E>>(
 	effect: Effect.Effect<A, E, never>,
-	options?: EffectResultOptions<E, F>,
+	options?: EffectResultOptions<E, Handlers>,
 ): Promise<CoreResultType<A, any>> {
 	const exit = await Effect.runPromiseExit(effect);
-	return fromExit(exit, options as EffectResultOptions<E, F>);
-}
-
-export function runEffect<R>(runtimeOrProvider: RuntimeProvider<R>): RunEffect<R>;
-export function runEffect<R, E, F extends TaggedFailure>(
-	runtimeOrProvider: RuntimeProvider<R>,
-	options: EffectResultOptions<E, F>,
-): <A>(effect: Effect.Effect<A, E, R>) => Promise<CoreResultType<A, F>>;
-export function runEffect<R, Mapper extends FailureMapper>(
-	runtimeOrProvider: RuntimeProvider<R>,
-	options: EffectResultMapperOptions<Mapper>,
-): <A, E extends Parameters<Mapper>[0]>(
-	effect: Effect.Effect<A, E, R>,
-) => Promise<CoreResultType<A, ReturnType<Mapper>>>;
-export function runEffect<R, E, F extends TaggedFailure>(
-	runtimeOrProvider: RuntimeProvider<R>,
-	outerOptions?: EffectResultOptions<E, F>,
-) {
-	return async <A, InnerE, InnerF extends TaggedFailure>(
-		effect: Effect.Effect<A, InnerE, R>,
-		innerOptions?: EffectResultOptions<InnerE, InnerF>,
-	) => {
-		const runtime = await resolveRuntime(runtimeOrProvider);
-		const exit = await Runtime.runPromiseExit(runtime)(effect);
-		const options = innerOptions ?? (outerOptions as unknown as EffectResultOptions<InnerE, InnerF> | undefined);
-
-		return options ? fromExit(exit, options) : fromExit(exit as Exit.Exit<A, InnerE & TaggedFailure>);
-	};
-}
-
-export const runWith = runEffect;
-
-export function toFailureTag<const E extends { readonly _tag: string }>(failure: E): TaggedFailure<E['_tag']> {
-	return {
-		_tag: failure._tag,
-	};
+	return fromExit(exit, options as EffectResultOptions<E, Handlers>);
 }
 
 export function toEffect<S>(result: SuccessType<S>): Effect.Effect<S, never, never>;
@@ -293,13 +262,14 @@ class Schema {
 	}>(taggedError: TaggedError) {
 		type Failure = EffectSchema.Schema.Type<TaggedError>;
 		type EncodedFailure = EffectSchema.Schema.Encoded<TaggedError>;
+		type Tag = EncodedFailure extends { readonly _tag: infer T extends string } ? T : TaggedError['_tag'];
 		type FieldsInput = Omit<EncodedFailure, '_tag'>;
 
 		return {
 			Schema: taggedError,
 			Type: {} as Failure,
 			Encoded: {} as EncodedFailure,
-			_tag: taggedError._tag,
+			_tag: taggedError._tag as Tag,
 			make: (fields: FieldsInput): Failure => taggedError.make(fields),
 			decode: (value: unknown): Failure => EffectSchema.decodeUnknownSync(taggedError)(value),
 			encode: (value: Failure): EncodedFailure => EffectSchema.encodeUnknownSync(taggedError)(value),
@@ -394,9 +364,6 @@ export const Result = {
 	...CoreResult,
 	fromExit,
 	fromEffect,
-	runEffect,
-	runWith,
-	toFailureTag,
 	toEffect,
 } as const;
 

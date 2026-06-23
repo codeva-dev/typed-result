@@ -1,5 +1,11 @@
 # @codeva-dev/typed-result
 
+## 1.1.0-alpha.4
+
+### Patch Changes
+
+- Refine Effect boundary conversion around explicit `Result.fromExit(exit, { onError })` whitelists, removing the alpha runtime helper surface and tightening strict Cause handling.
+
 ## 1.1.0-alpha.3
 
 ### Patch Changes

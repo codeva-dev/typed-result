@@ -776,68 +776,62 @@ const decoded = Schema.safeDecode(TodoResult.Schema, payload);
 
 The Effect subpath adds conversion helpers to the exported `Result` namespace for Effect boundary code.
 
-`Result.Failure(...)` is a tagged failure envelope, so the zero-glue Effect interop path expects the Effect error channel to already be a public tagged failure DTO. If the Effect error is a class, framework error, parser error, or any other non-boundary shape, use `mapFailure` to project it into a tagged boundary failure.
+`Result.Failure(...)` is a tagged failure envelope. Effect interop therefore uses an explicit `onError` whitelist at the boundary: only listed typed Effect failures are encoded into `Result.Failure(...)`; unlisted failures, defects, interruptions, unknown causes, and mixed causes throw.
 
-`Result.fromEffect(effect)` runs an Effect whose environment is already fully provided and resolves a `Promise<Result<S, F>>`:
+Use `unsafe_Schema.TaggedFailure(...)` for Result-owned failure schemas, or `unsafe_Schema.fromTaggedError(...)` when the Effect command already models public errors with `Schema.TaggedError` classes.
+
+The Effect API intentionally keeps runtime execution explicit. Use `Runtime.runPromiseExit(runtime)(command)` at runtime-provided boundaries, then pass the `Exit` to `Result.fromExit(...)`. The previous alpha helpers `runEffect`, `runWith`, `toFailureTag`, and `fromEffectExit` are not part of the public Effect surface.
 
 ```ts
-const loadTodo = (todoId: string) =>
-  Effect.gen(function* () {
-    const todo = yield* TodoRepository.find(todoId);
+import { Result, unsafe_Schema as ResultSchema } from '@codeva-dev/typed-result/effect';
+import { Runtime, Schema } from 'effect';
 
-    if (!todo) {
-      return yield* Effect.fail(
-        TodoNotFound.make({
-          todoId,
-          message: 'Todo does not exist',
-        }),
-      );
-    }
+class TodoNotFound extends Schema.TaggedError<TodoNotFound>()('TodoNotFound', {
+  todoId: Schema.String,
+}) {}
 
-    return todo;
-  });
-
-const result = await Result.fromEffect(loadTodo('todo-1'));
+class CannotArchiveTodo extends Schema.TaggedError<CannotArchiveTodo>()('CannotArchiveTodo', {
+  todoId: Schema.String,
+}) {}
 ```
 
-`Result.fromExit(exit)` converts an existing `Exit` into a Result envelope:
+At an Effect execution boundary, run the command to an `Exit`, then explicitly choose which typed errors are public Result failures:
 
 ```ts
-const exit = yield* Effect.exit(loadTodo('todo-1'));
-const result = Result.fromExit(exit);
+const exit = await Runtime.runPromiseExit(runtime)(archiveTodo(input));
+
+return Result.fromExit(exit, {
+  onError: {
+    TodoNotFound: ResultSchema.fromTaggedError(TodoNotFound),
+    CannotArchiveTodo: ResultSchema.fromTaggedError(CannotArchiveTodo),
+  },
+});
 ```
 
-`Result.runEffect(runtimeOrProvider)` runs an Effect with a `Runtime` or an object that can lazily provide one:
+For fully provided `Effect<A, E, never>` values, `Result.fromEffect(effect, options)` runs the Effect and applies the same boundary rules:
 
 ```ts
-const result = await Result.runEffect(runtime)(loadTodo('todo-1'));
+const TodoNotFoundFailure = ResultSchema.TaggedFailure('TodoNotFound', {
+  todoId: Schema.String,
+});
+
+return await Result.fromEffect(loadTodo('todo-1'), {
+  onError: {
+    TodoNotFound: TodoNotFoundFailure,
+  },
+});
 ```
 
-For server boundaries where the command error channel is already a public tagged failure union, no projection is needed:
+Handler keys must match both the Effect failure `_tag` and the encoded Result failure `_tag`. The returned Result failure union is inferred only from the listed handlers:
 
 ```ts
-return await Result.runEffect(runtime)(command);
-```
+const result = Result.fromExit(exit, {
+  onError: {
+    TodoNotFound: TodoNotFoundFailure,
+  },
+});
 
-For boundaries that should expose only a transport DTO, pass `mapFailure`:
-
-```ts
-return await Result.runEffect(RuntimeServerLive, {
-  mapFailure: Result.toFailureTag,
-})(RequestMeeting(input).pipe(withAuthStateContext(context.authState)));
-```
-
-`Result.runWith(runtimeOrProvider)` is the same runner in pipe-friendly form:
-
-```ts
-const result = await loadTodo('todo-1').pipe(Result.runWith(runtime));
-```
-
-`Result.toFailureTag(error)` projects a tagged error object to `{ _tag }` while preserving the literal tag type:
-
-```ts
-const failure = Result.toFailureTag({ _tag: 'TodoNotFound' as const, message: 'Missing' });
-// { _tag: "TodoNotFound" }
+// Result<Success, { _tag: "TodoNotFound"; todoId: string }>
 ```
 
 `Result.toEffect(result)` converts a Result envelope back into `Effect<S, F, never>`:
@@ -846,7 +840,7 @@ const failure = Result.toFailureTag({ _tag: 'TodoNotFound' as const, message: 'M
 const todo = yield* Result.toEffect(result);
 ```
 
-Effect defects are not converted into `Result.Failure(...)`. `fromEffect(...)`, `fromExit(...)`, `runEffect(...)`, and `runWith(...)` convert only a pure typed Effect failure. Defects, interruptions, unknown causes, and mixed causes that contain a defect or interruption are rethrown with `Cause.squash(cause)` so they can travel through the runtime/framework error path.
+Effect defects are not converted into `Result.Failure(...)`. `fromEffect(...)` and `fromExit(...)` convert only a single pure typed Effect failure that has a matching `onError` handler. Defects, interruptions, unknown causes, multiple failures, unlisted failures, and mixed causes are rethrown so they can travel through the runtime/framework error path.
 
 ## Package Exports
 
