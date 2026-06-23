@@ -1,5 +1,11 @@
 # @codeva-dev/typed-result
 
+## 1.1.0-alpha.5
+
+### Patch Changes
+
+- Allow Effect `fromTaggedError(...)` to wrap `Schema.TaggedError` classes exposed through narrower constructor types, including domain-kit `DomainError.Class(...)` errors.
+
 ## 1.1.0-alpha.4
 
 ### Patch Changes

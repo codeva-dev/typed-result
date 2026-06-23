@@ -744,6 +744,17 @@ class TodoArchived extends EffectSchema.TaggedError<TodoArchived>()('TodoArchive
 const TodoArchivedFailure = Schema.fromTaggedError(TodoArchived);
 ```
 
+`fromTaggedError(...)` also accepts libraries that expose `Schema.TaggedError` classes through a narrower constructor type, such as `DomainError.Class(...)` from `@codeva-dev/domain-model-kit/effect`:
+
+```ts
+const SchedulerParticipantNotFoundError = DomainError.Class('SchedulerParticipantNotFoundError', {
+  message: EffectSchema.String,
+  participantId: EffectSchema.String,
+});
+
+const SchedulerParticipantNotFoundFailure = Schema.fromTaggedError(SchedulerParticipantNotFoundError);
+```
+
 Use `decode(...)` when an unknown Result envelope should become a synchronous core Result object:
 
 ```ts
@@ -778,7 +789,7 @@ The Effect subpath adds conversion helpers to the exported `Result` namespace fo
 
 `Result.Failure(...)` is a tagged failure envelope. Effect interop therefore uses an explicit `onError` whitelist at the boundary: only listed typed Effect failures are encoded into `Result.Failure(...)`; unlisted failures, defects, interruptions, unknown causes, and mixed causes throw.
 
-Use `unsafe_Schema.TaggedFailure(...)` for Result-owned failure schemas, or `unsafe_Schema.fromTaggedError(...)` when the Effect command already models public errors with `Schema.TaggedError` classes.
+Use `unsafe_Schema.TaggedFailure(...)` for Result-owned failure schemas, or `unsafe_Schema.fromTaggedError(...)` when the Effect command already models public errors with `Schema.TaggedError` classes. This includes domain-kit `DomainError.Class(...)` errors whose public type hides the full Effect Schema surface.
 
 The Effect API intentionally keeps runtime execution explicit. Use `Runtime.runPromiseExit(runtime)(command)` at runtime-provided boundaries, then pass the `Exit` to `Result.fromExit(...)`. The previous alpha helpers `runEffect`, `runWith`, `toFailureTag`, and `fromEffectExit` are not part of the public Effect surface.
 

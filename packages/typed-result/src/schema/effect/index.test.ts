@@ -161,6 +161,16 @@ describe('Effect ResultSchema.fromTaggedError', () => {
 		todoId: Schema.String,
 	}) {}
 
+	type DomainErrorInstance<TTag extends string, Fields extends object> = Error &
+		Fields & {
+			readonly _tag: TTag;
+		};
+
+	type DomainErrorClass<TTag extends string, Fields extends object> = {
+		readonly _tag: TTag;
+		new (props: Fields): DomainErrorInstance<TTag, Fields>;
+	};
+
 	it('wraps native Effect Schema TaggedError classes', () => {
 		const TodoNotFoundFailure = ResultSchema.fromTaggedError(TodoNotFound);
 
@@ -181,6 +191,45 @@ describe('Effect ResultSchema.fromTaggedError', () => {
 			message: 'Todo does not exist',
 			todoId: 'todo-1',
 		});
+	});
+
+	it('wraps Schema TaggedError classes whose public type hides the Schema surface', () => {
+		const SchedulerParticipantNotFoundError = Schema.TaggedError<DomainErrorInstance<
+			'SchedulerParticipantNotFoundError',
+			{
+				readonly message: string;
+				readonly participantId: string;
+			}
+		>>()('SchedulerParticipantNotFoundError', {
+			message: Schema.String,
+			participantId: Schema.String,
+		}) as unknown as DomainErrorClass<
+			'SchedulerParticipantNotFoundError',
+			{
+				readonly message: string;
+				readonly participantId: string;
+			}
+		>;
+
+		const SchedulerParticipantNotFoundFailure = ResultSchema.fromTaggedError(SchedulerParticipantNotFoundError);
+		const failure = new SchedulerParticipantNotFoundError({
+			message: 'Participant not found',
+			participantId: 'participant-1',
+		});
+
+		const encoded = SchedulerParticipantNotFoundFailure.encode(failure);
+
+		expect(encoded).toEqual({
+			_tag: 'SchedulerParticipantNotFoundError',
+			message: 'Participant not found',
+			participantId: 'participant-1',
+		});
+		const typecheck: {
+			readonly _tag: 'SchedulerParticipantNotFoundError';
+			readonly message: string;
+			readonly participantId: string;
+		} = encoded;
+		void typecheck;
 	});
 
 	it('can use native TaggedError wrappers in Result schemas', () => {

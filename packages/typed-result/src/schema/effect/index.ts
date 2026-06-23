@@ -40,6 +40,39 @@ type TaggedFailureInput<Tag extends string, Fields extends NoContextFields> = Om
 	'_tag'
 >;
 
+type AnyTaggedErrorClassLike = {
+	readonly _tag: string;
+	new (props: any): any;
+	readonly make?: (fields: any) => any;
+};
+
+type TaggedErrorType<TaggedError> =
+	TaggedError extends EffectSchema.Schema.AnyNoContext
+		? EffectSchema.Schema.Type<TaggedError>
+		: TaggedError extends new (...args: readonly any[]) => infer Type
+			? Type
+			: never;
+
+type TaggedErrorInput<TaggedError> =
+	TaggedError extends {
+		readonly make: (fields: infer Fields) => any;
+	}
+		? Fields
+		: TaggedError extends new (props: infer Fields) => any
+			? Fields
+			: never;
+
+type TaggedErrorEncoded<TaggedError extends { readonly _tag: string }> =
+	TaggedError extends EffectSchema.Schema.AnyNoContext
+		? EffectSchema.Schema.Encoded<TaggedError>
+		: TaggedErrorInput<TaggedError> extends object
+			? {
+					readonly _tag: TaggedError['_tag'];
+				} & TaggedErrorInput<TaggedError>
+			: {
+					readonly _tag: TaggedError['_tag'];
+				};
+
 type ResultSchemaSuccess<SuccessSchema extends EffectSchema.Schema.AnyNoContext> = {
 	readonly _kind: 'Success';
 	readonly value: EffectSchema.Schema.Type<SuccessSchema>;
@@ -256,23 +289,23 @@ class Schema {
 		} as const;
 	}
 
-	static fromTaggedError<const TaggedError extends EffectSchema.Schema.AnyNoContext & {
-		readonly _tag: string;
-		readonly make: (fields: Omit<EffectSchema.Schema.Encoded<TaggedError>, '_tag'>) => EffectSchema.Schema.Type<TaggedError>;
-	}>(taggedError: TaggedError) {
-		type Failure = EffectSchema.Schema.Type<TaggedError>;
-		type EncodedFailure = EffectSchema.Schema.Encoded<TaggedError>;
+	static fromTaggedError<const TaggedError extends AnyTaggedErrorClassLike>(taggedError: TaggedError) {
+		type Failure = TaggedErrorType<TaggedError>;
+		type EncodedFailure = TaggedErrorEncoded<TaggedError>;
 		type Tag = EncodedFailure extends { readonly _tag: infer T extends string } ? T : TaggedError['_tag'];
-		type FieldsInput = Omit<EncodedFailure, '_tag'>;
+		type FieldsInput = TaggedErrorInput<TaggedError>;
 
 		return {
-			Schema: taggedError,
+			Schema: taggedError as unknown as EffectSchema.Schema<Failure, EncodedFailure, never>,
 			Type: {} as Failure,
 			Encoded: {} as EncodedFailure,
 			_tag: taggedError._tag as Tag,
-			make: (fields: FieldsInput): Failure => taggedError.make(fields),
-			decode: (value: unknown): Failure => EffectSchema.decodeUnknownSync(taggedError)(value),
-			encode: (value: Failure): EncodedFailure => EffectSchema.encodeUnknownSync(taggedError)(value),
+			make: (fields: FieldsInput): Failure =>
+				(taggedError.make ? taggedError.make(fields) : new taggedError(fields as ConstructorParameters<TaggedError>[0])) as Failure,
+			decode: (value: unknown): Failure =>
+				EffectSchema.decodeUnknownSync(taggedError as unknown as EffectSchema.Schema<Failure, EncodedFailure, never>)(value),
+			encode: (value: Failure): EncodedFailure =>
+				EffectSchema.encodeUnknownSync(taggedError as unknown as EffectSchema.Schema<Failure, EncodedFailure, never>)(value),
 		} as const;
 	}
 
