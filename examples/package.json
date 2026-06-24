@@ -1,0 +1,17 @@
+{
+  "name": "@codeva-dev/typed-result-examples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@codeva-dev/typed-result": "file:..",
+    "effect": "^3.21.2",
+    "react": "^19.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

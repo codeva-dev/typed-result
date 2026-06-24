@@ -1,28 +1,112 @@
 {
-	"name": "typed-result-monorepo",
-	"private": true,
-	"type": "module",
-	"workspaces": [
-		"packages/*"
-	],
-	"scripts": {
-		"build": "npm run build -w @codeva-dev/typed-result",
-		"test": "npm run test -w @codeva-dev/typed-result",
-		"typecheck": "npm run typecheck -w @codeva-dev/typed-result",
-		"pack:dry": "npm pack --dry-run -w @codeva-dev/typed-result",
-		"typed-result:build": "npm run build -w @codeva-dev/typed-result",
-		"typed-result:test": "npm run test -w @codeva-dev/typed-result",
-		"typed-result:typecheck": "npm run typecheck -w @codeva-dev/typed-result",
-		"typed-result:pack:dry": "npm pack --dry-run -w @codeva-dev/typed-result",
-		"release:check": "npm run typecheck && npm run test && npm run build && npm run pack:dry",
-		"changeset": "changeset",
-		"changeset:version": "changeset version",
-		"changeset:publish": "npm run release:check && changeset publish",
-		"changeset:pre:alpha": "changeset pre enter alpha",
-		"changeset:pre:exit": "changeset pre exit"
-	},
-	"devDependencies": {
-		"@changesets/cli": "^2.31.0",
-		"typescript": "^5.8.3"
-	}
+  "name": "@codeva-dev/typed-result",
+  "version": "1.1.0-alpha.6",
+  "author": {
+    "name": "Codeva",
+    "email": "dev@codeva.hu",
+    "url": "https://codeva.hu"
+  },
+  "description": "A serializable typed Result model for boundary responses.",
+  "keywords": [
+    "result",
+    "typed-result",
+    "serializable",
+    "wire-protocol",
+    "boundary",
+    "tagged-errors",
+    "typescript",
+    "react",
+    "tanstack-query",
+    "tanstack-start"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeva-dev/typed-result.git"
+  },
+  "bugs": {
+    "url": "https://github.com/codeva-dev/typed-result/issues"
+  },
+  "homepage": "https://github.com/codeva-dev/typed-result#readme",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "workspaces": [
+    "examples"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js",
+      "require": "./dist/core.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./zod": {
+      "types": "./dist/zod.d.ts",
+      "import": "./dist/zod.js",
+      "require": "./dist/zod.cjs"
+    },
+    "./effect": {
+      "types": "./dist/effect.d.ts",
+      "import": "./dist/effect.js",
+      "require": "./dist/effect.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "examples:typecheck": "npm run build && npm run typecheck -w @codeva-dev/typed-result-examples",
+    "pack:dry": "npm pack --dry-run",
+    "release:check": "npm run typecheck && npm run test && npm run build && npm run examples:typecheck && npm run pack:dry",
+    "release:publish": "npm publish",
+    "release:publish:alpha": "npm publish --tag alpha",
+    "preversion": "npm run release:check",
+    "prepare": "npm run build"
+  },
+  "peerDependencies": {
+    "effect": "^3.0.0",
+    "react": ">=18",
+    "zod": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "effect": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "effect": "^3.21.2",
+    "react": "^19.2.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4",
+    "zod": "^4.4.3"
+  }
 }
