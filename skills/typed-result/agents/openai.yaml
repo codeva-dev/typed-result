@@ -1,0 +1,4 @@
+interface:
+  display_name: "typed-result"
+  short_description: "Use typed Result boundaries in TypeScript apps."
+  default_prompt: "Use $typed-result to design serializable Result boundaries with @codeva-dev/typed-result."

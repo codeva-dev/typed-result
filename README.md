@@ -42,6 +42,14 @@ The repository root is the package root, so a specific GitHub ref can also be in
 npm install github:codeva-dev/typed-result#<git-tag-or-commit>
 ```
 
+Agent skill:
+
+```sh
+npx skills add codeva-dev/typed-result --skill typed-result --agent codex claude-code
+```
+
+The skill lives in `skills/typed-result` and can be installed into Codex, Claude, and other skills.sh-compatible agents.
+
 Core import:
 
 ```ts
