@@ -1,62 +1,56 @@
 ---
 name: typed-result
-description: Use typed-result for serializable Result boundaries in TypeScript apps, especially tagged failures, schema-decoded envelopes, React rendering, and Effect Exit boundaries.
+description: Use typed-result for serializable Result boundary contracts in TypeScript apps. Trigger when modeling tagged failures, returning Result envelopes from server functions/RPC/workers, decoding unknown Result JSON with Zod or Effect Schema, rendering Results in React, or converting Effect Exit values. Do not use for package maintenance, releases, or changing typed-result itself.
 ---
 
 # typed-result
 
-Use this skill to apply `@codeva-dev/typed-result` in application code. The leading concern is the boundary: what crosses it as public data, and what stays on the thrown error path.
+Use `@codeva-dev/typed-result` to make boundary contracts explicit: public success/failure data crosses the boundary as a serializable `Result`; defects stay on the thrown/framework error path.
 
-## Boundary Rules
+## Process
 
-- Use `Result` envelopes when the operation is the protocol: server functions, RPC handlers, worker messages, queues, SSR loaders, cached payloads, localStorage, or AI-to-AI messages.
-- Use normal HTTP status codes for conventional REST APIs; convert to `Result` in a client adapter only when typed UI branching helps.
-- Put only actionable public application states in `Result.Failure`.
-- Let defects, impossible states, invalid protocol payloads, and non-recoverable infrastructure failures throw.
+1. Classify the boundary.
+   - Result-envelope: server function, RPC handler, worker message, queue job, SSR loader, cache/localStorage payload, AI-to-AI message.
+   - HTTP-native: conventional REST endpoint where status codes are part of the public protocol.
+   - Consumer-only: UI or adapter code that receives an existing Result.
+   - Effect boundary: Effect command/use-case whose `Exit` must become a Result envelope.
 
-## Failure DTO Rules
+2. Pick the contract.
+   - For Result-envelope boundaries, return `Result.Success(...)` or `Result.Failure(...)`.
+   - For HTTP-native boundaries, keep HTTP status codes on the server and convert to Result in a client adapter only when typed UI branching helps.
+   - For consumer-only code, validate unknown payloads before trusting them, then branch with Result helpers.
+   - For Effect boundaries, run to `Exit`, whitelist public typed errors, and throw everything else.
 
-- Keep failure DTOs tagged and serializable. `Result.Failure` is not an arbitrary error container.
-- Prefer `Result.defineTaggedFailure(...)` for reusable public failures.
-- Use inline `Result.Failure('Tag', fields)` only for one-off local failures.
-- Expose only public fields in failure DTOs; omit raw causes, framework objects, and other unserializable values.
+3. Check the failure DTO.
+   - Failure DTOs must be tagged, public, and serializable.
+   - Put only actionable states in `Result.Failure`.
+   - Omit raw causes, framework objects, unknown values, and infrastructure details.
 
-## Consumer Rules
-
-- Use `Result.match(...)`, `Result.isSuccess(...)`, and `Result.isFailure(...)`; avoid manual `_kind` branching.
-- Validate unknown boundary payloads with the Zod or Effect schema subpath before trusting them.
-- Use React helpers only for already-created or decoded Result values.
-- Do not invent impossible branches; if a Result cannot fail, do not add an `onFailure` handler just to satisfy a shape.
+Completion criterion: the code clearly shows which states are public failures, which states throw, and how callers branch without inspecting `_kind` manually.
 
 ## Imports
 
-Choose the import shape needed for the file.
-
-Core:
+Choose one import shape per file.
 
 ```ts
 import { Result, type ResultType } from '@codeva-dev/typed-result';
 ```
 
-React:
-
-```ts
+```tsx
 import { Match } from '@codeva-dev/typed-result/react';
 ```
-
-Zod:
 
 ```ts
 import { Result, unsafe_Schema as ResultSchema } from '@codeva-dev/typed-result/zod';
 ```
-
-Effect:
 
 ```ts
 import { Result, unsafe_Schema as ResultSchema } from '@codeva-dev/typed-result/effect';
 ```
 
 ## Core Pattern
+
+Use reusable failure factories for public domain failures:
 
 ```ts
 const TodoNotFound = Result.defineTaggedFailure<
@@ -76,15 +70,17 @@ function getTodo(todoId: string): ResultType<Todo, TodoNotFoundFailure> {
 			});
 }
 
-const label = Result.match(getTodo('todo-1'), {
+return Result.match(getTodo('todo-1'), {
 	onSuccess: (todo) => todo.title,
 	onFailure: (failure) => failure.message,
 });
 ```
 
+Use `Result.isSuccess(...)` or `Result.isFailure(...)` when guard-style control flow is clearer. Avoid manual `_kind` branching.
+
 ## Effect Boundary
 
-Produce an `Exit`, then map only public Effect error tags into Result failures:
+Convert from `Exit` at runtime boundaries. Do not map every Effect error automatically.
 
 ```ts
 import { Result, unsafe_Schema as ResultSchema } from '@codeva-dev/typed-result/effect';
@@ -109,5 +105,5 @@ Preserve the semantics: success -> `Result.Success`; whitelisted typed failure -
 ## Schema And React Notes
 
 - Zod: use `ResultSchema.Result({ Success, Failure })` to decode unknown JSON Result envelopes.
-- Effect Schema: use `ResultSchema.fromTaggedError(...)` when exposing public serializable fields from Effect tagged errors.
-- React: use `<Match />` or related helpers for rendering decoded Results, not for validating unknown payloads.
+- Effect Schema: use `ResultSchema.fromTaggedError(...)` to expose public serializable fields from Effect tagged errors.
+- React: use `<Match />` or related helpers for already-created or decoded Results. If a Result cannot fail, do not invent an `onFailure` branch.
