@@ -67,6 +67,21 @@
       "types": "./dist/effect.d.ts",
       "import": "./dist/effect.js",
       "require": "./dist/effect.cjs"
+    },
+    "./tanstack-query": {
+      "types": "./dist/tanstack-query.d.ts",
+      "import": "./dist/tanstack-query.js",
+      "require": "./dist/tanstack-query.cjs"
+    },
+    "./tanstack-query/react": {
+      "types": "./dist/tanstack-query/react.d.ts",
+      "import": "./dist/tanstack-query/react.js",
+      "require": "./dist/tanstack-query/react.cjs"
+    },
+    "./tanstack-query/convex": {
+      "types": "./dist/tanstack-query/convex.d.ts",
+      "import": "./dist/tanstack-query/convex.js",
+      "require": "./dist/tanstack-query/convex.cjs"
     }
   },
   "main": "./dist/index.cjs",
@@ -85,11 +100,15 @@
     "prepare": "npm run build"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5.101.2",
     "effect": "^3.0.0",
     "react": ">=18",
     "zod": "^4.0.0"
   },
   "peerDependenciesMeta": {
+    "@tanstack/react-query": {
+      "optional": true
+    },
     "effect": {
       "optional": true
     },
@@ -101,6 +120,7 @@
     }
   },
   "devDependencies": {
+    "@tanstack/react-query": "^5.101.2",
     "@types/react": "^19.2.0",
     "effect": "^3.21.2",
     "react": "^19.2.0",

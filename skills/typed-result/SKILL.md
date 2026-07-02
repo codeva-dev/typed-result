@@ -40,6 +40,10 @@ import { Result, type ResultType } from '@codeva-dev/typed-result';
 import { Match } from '@codeva-dev/typed-result/react';
 ```
 
+```tsx
+import { useResultMutation, useResultQuery } from '@codeva-dev/typed-result/tanstack-query/react';
+```
+
 ```ts
 import { Result, unsafe_Schema as ResultSchema } from '@codeva-dev/typed-result/zod';
 ```
@@ -107,3 +111,28 @@ Preserve the semantics: success -> `Result.Success`; whitelisted typed failure -
 - Zod: use `ResultSchema.Result({ Success, Failure })` to decode unknown JSON Result envelopes.
 - Effect Schema: use `ResultSchema.fromTaggedError(...)` to expose public serializable fields from Effect tagged errors.
 - React: use `<Match />` or related helpers for already-created or decoded Results. If a Result cannot fail, do not invent an `onFailure` branch.
+- TanStack Query React hooks: use `useResultQuery` / `useResultMutation` when TanStack operational state should be combined with decoded Result state. Branch primarily on `state: 'pending' | 'success' | 'failure' | 'error'`; use `hasResult` before passing `result` to `<Match />`; throw or route `state === 'error'` through the framework error path.
+
+```tsx
+const todoQuery = useResultQuery({
+	queryKey: ['todo', todoId],
+	queryFn: () => fetchTodo(todoId),
+	schema: TodoResult,
+});
+
+if (todoQuery.hasResult) {
+	return (
+		<Match
+			result={todoQuery.result}
+			onSuccess={(todo) => <TodoView todo={todo} />}
+			onFailure={(failure) => <FailureView failure={failure} />}
+		/>
+	);
+}
+
+if (todoQuery.state === 'error') {
+	throw todoQuery.error;
+}
+
+return <LoadingView />;
+```

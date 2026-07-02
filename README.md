@@ -88,6 +88,24 @@ npm install effect
 import { Result, unsafe_Schema } from '@codeva-dev/typed-result/effect';
 ```
 
+TanStack Query adapter:
+
+```ts
+import { resultFromTanStackState } from '@codeva-dev/typed-result/tanstack-query';
+```
+
+TanStack Query React hooks:
+
+```ts
+import { useResultMutation, useResultQuery } from '@codeva-dev/typed-result/tanstack-query/react';
+```
+
+Convex error extractor for TanStack Query integrations:
+
+```ts
+import { convexErrorResultExtractor } from '@codeva-dev/typed-result/tanstack-query/convex';
+```
+
 ## Quick Example
 
 ```ts
@@ -160,6 +178,82 @@ You can also return Result envelopes from HTTP endpoints if that is your chosen 
 
 - HTTP-native APIs return plain HTTP payloads and convert to `Result` in the client adapter
 - Result-envelope APIs return plain `Result` payloads and validate unknown payloads separately if the receiving side needs runtime validation
+
+## TanStack Query Adapter
+
+TanStack Query tracks operational state: `data`, `error`, pending status, retries, and cache state. `typed-result` models application boundary state: `Result.Success(value)` or `Result.Failure(taggedFailure)`.
+
+Use the TanStack Query adapter when a query or mutation can receive expected application failures through either the data channel or the error channel.
+
+The adapter is intentionally small. It does not replace TanStack Query, Convex TanStack integration, or any framework-specific reactivity. It only normalizes a `{ data, error }` snapshot into a validated Result when possible.
+
+```ts
+import { resultFromTanStackState } from '@codeva-dev/typed-result/tanstack-query';
+
+const result = resultFromTanStackState({
+  data: query.data,
+  error: query.error,
+  schema: TodoResult,
+});
+```
+
+Normalization rules:
+
+- `data` is already a Result envelope -> validate with `schema.decode(...)` and return it
+- `data` is a plain success payload -> wrap as `Result.Success(data)`, validate, and return it
+- `error` is a Result envelope -> validate and return it
+- `error.data` is a Result envelope -> validate and return it; this is structural and works with any error object that exposes a `data` property
+- unknown errors -> throw the original error
+- schema mismatch -> throw the schema decode error
+- no `data` and no `error` -> return `undefined`
+
+The schema must be a typed-result schema object with `decode(value)`. Both Zod and Effect Schema Result schemas support this:
+
+```ts
+const result = resultFromTanStackState({
+  data: query.data,
+  error: query.error,
+  schema: TodoResult,
+});
+```
+
+For reusable adapters:
+
+```ts
+import { createResultAdapter } from '@codeva-dev/typed-result/tanstack-query';
+
+const todoResultAdapter = createResultAdapter({
+  schema: TodoResult,
+});
+
+const result = todoResultAdapter.fromQueryState(query);
+```
+
+### Error Data And Convex
+
+The default adapter already checks any `error.data` property. This is intentionally structural: it works with Convex errors and with other framework/application errors that carry public data on a `data` field.
+
+For Convex, prefer throwing structured application errors with `ConvexError(data)` on the server:
+
+```ts
+throw new ConvexError(Result.Failure(TodoNotFound, { todoId }));
+```
+
+Then use the Convex-named extractor with the normal adapter on the client. It is a convenience export for the same `error.data` convention, not a dependency on Convex runtime types:
+
+```ts
+import { createResultAdapter } from '@codeva-dev/typed-result/tanstack-query';
+import { convexErrorResultExtractor } from '@codeva-dev/typed-result/tanstack-query/convex';
+
+const adapter = createResultAdapter({
+  schema: TodoResult,
+  extractErrorResult: convexErrorResultExtractor,
+});
+
+const result = adapter.fromMutationState(mutation);
+```
+
+This keeps Convex's own TanStack integration and realtime/subscription behavior intact. The adapter should wrap the state produced by `@convex-dev/react-query`, `convexQuery`, or `useConvexMutation`; it should not replace those mechanisms with one-shot client calls.
 
 ## Data Shape
 
@@ -531,12 +625,16 @@ import { Match, MatchFailureTags, useResult } from '@codeva-dev/typed-result/rea
 
 ### `useResult`
 
-`useResult` is strict: it accepts only a typed `Result`, not unknown input. It projects the result into a discriminated state object for programmatic React logic.
+`useResult` is strict: it accepts only a typed `Result` or `undefined`, not unknown input. It projects the result into a discriminated state object for programmatic React logic. `undefined` stays `undefined`, which is useful for pending async states.
 
 Use it for disabled states, analytics, toast logic, conditional classes, derived labels, optimistic UI decisions, or other component logic that should branch on the result channel.
 
 ```tsx
 const state = useResult(result);
+
+if (state === undefined) {
+  return null;
+}
 
 if (state.channel === 'success') {
   state.data;
@@ -575,6 +673,78 @@ type UseResultReturn<R> =
 ```
 
 `useResult` intentionally does not have an invalid branch. Unknown boundary payloads should be decoded or checked before they reach this hook. For render boundaries that may receive unknown data, use `Match` with `onInvalid` or `throwOnInvalid`.
+
+### TanStack Query Hooks
+
+TanStack Query hooks are exported from `@codeva-dev/typed-result/tanstack-query/react`. They derive UI state from TanStack operational state first, then project successful data through `useResult`.
+
+`useResultQuery` returns `state`, `hasResult`, the projected `useResult(...)` fields at the top level, plus TanStack operational fields: `isPending`, `isFetching`, `isError`, `error`, and `query`. `query` is the original TanStack query result.
+
+State rules:
+
+- `query.isError === true` -> `state: 'error'`
+- `query.isSuccess === true` and decoded `Result.Success` -> `state: 'success'`, `isSuccess: true`
+- `query.isSuccess === true` and decoded `Result.Failure` -> `state: 'failure'`, `isFailure: true`
+- pending/no decoded result -> `state: 'pending'`
+
+Use `hasResult` when you need to know whether there is a renderable Result envelope. It narrows `result` to a defined `Result`.
+
+```tsx
+import { Match } from '@codeva-dev/typed-result/react';
+import { useResultQuery } from '@codeva-dev/typed-result/tanstack-query/react';
+
+function TodoView({ todoId }: { readonly todoId: string }) {
+  const todoQuery = useResultQuery({
+    queryKey: ['todo', todoId],
+    queryFn: () => fetchTodo(todoId),
+    schema: TodoResult,
+  });
+
+  if (todoQuery.hasResult) {
+    return (
+      <Match
+        result={todoQuery.result}
+        onFailure={(failure) => <div>{failure.message}</div>}
+        onSuccess={(todo) => (
+          <section>
+            {todoQuery.isFetching ? <small>Updating...</small> : null}
+            <h2>{todo.title}</h2>
+          </section>
+        )}
+      />
+    );
+  }
+
+  if (todoQuery.state === 'pending') {
+    return <div>Loading...</div>;
+  }
+
+  if (todoQuery.state === 'error') {
+    throw todoQuery.error;
+  }
+
+  return null;
+}
+```
+
+`useResultMutation` follows the same state rules and returns `state`, `hasResult`, projected Result fields, `isPending`, `isError`, `error`, `mutate`, `mutateAsync`, and `mutation`. `mutation` is the original TanStack mutation result.
+
+```tsx
+import { useResultMutation } from '@codeva-dev/typed-result/tanstack-query/react';
+
+const saveTodo = useResultMutation({
+  mutationFn: updateTodo,
+  schema: TodoResult,
+});
+
+saveTodo.mutate({ todoId: 'todo-1', title: 'Updated title' });
+
+if (saveTodo.state === 'failure') {
+  console.log(saveTodo.failure.message);
+}
+```
+
+The hook entrypoint is separate from the core adapter entrypoint. Import from `@codeva-dev/typed-result/tanstack-query` for framework-independent normalization, and from `@codeva-dev/typed-result/tanstack-query/react` for React/TanStack hooks.
 
 ### `Match`
 
