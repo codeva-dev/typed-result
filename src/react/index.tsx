@@ -33,7 +33,14 @@ export type UseResultReturn<R extends AnyResult> =
 			readonly result: Extract<R, FailureType<TaggedFailure>>;
 		  });
 
-export function useResult<R extends AnyResult>(result: R): UseResultReturn<R> {
+export function useResult<R extends AnyResult>(result: R): UseResultReturn<R>;
+export function useResult(result: undefined): undefined;
+export function useResult<R extends AnyResult>(result: R | undefined): UseResultReturn<R> | undefined;
+export function useResult<R extends AnyResult>(result: R | undefined): UseResultReturn<R> | undefined {
+	if (result === undefined) {
+		return undefined;
+	}
+
 	if (Result.isSuccess(result)) {
 		return {
 			channel: 'success',

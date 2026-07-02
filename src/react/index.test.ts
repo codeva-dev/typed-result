@@ -92,4 +92,11 @@ describe('useResult', () => {
 		expect(state.failure).toEqual(TodoNotFound);
 		expectTypeOf(state.channel).toEqualTypeOf<'failure'>();
 	});
+
+	it('returns undefined for pending result values', () => {
+		const state = useResult(undefined);
+
+		expect(state).toBeUndefined();
+		expectTypeOf(state).toEqualTypeOf<undefined>();
+	});
 });
