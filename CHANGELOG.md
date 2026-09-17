@@ -1,5 +1,15 @@
 # @codeva-dev/typed-result
 
+## 1.1.0
+
+### Minor Changes
+
+- Add TanStack Query boundary adapters with Zod and Effect Schema decoding, structural `error.data` extraction, and React query/mutation hooks with discriminated Result states.
+- Add Zod and Effect Schema integration and explicit Effect `Result.fromExit(exit, { onError })` failure whitelists; defects, interruptions, and mixed causes escape as errors.
+- Support reusable failure creators for Effect tagged errors, including domain-model-kit classes, and omit internal `cause` fields from public failure DTOs.
+- Require match handlers only for branches present in the input Result type.
+- Make the repository root the installable package, replace Lerna releases with npm version management, and add a compilable examples workspace and a usage skill.
+
 ## 1.1.0-alpha.6
 
 ### Patch Changes

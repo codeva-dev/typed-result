@@ -1083,8 +1083,8 @@ npm run examples:typecheck
 Releases use the standard npm lifecycle. Pick the exact version with `npm version`, then publish with the intended tag:
 
 ```sh
-npm version 1.1.0-alpha.7
-npm publish --tag alpha
+npm version 1.1.0
+npm publish --tag latest
 ```
 
 ## Example: Hono HTTP API With TanStack Query
